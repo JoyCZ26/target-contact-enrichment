@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Staging object for quarterly contact enrichment pipeline. Clay writes LinkedIn enrichment data here; GitHub Actions script reads and processes it to update Contacts.</description>
+    <label>Contact Enrichment</label>
+    <nameField>
+        <displayFormat>CE-{0000000}</displayFormat>
+        <label>Contact Enrichment Name</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Contact Enrichments</pluralLabel>
+    <sharingModel>ControlledByParent</sharingModel>
+</CustomObject>

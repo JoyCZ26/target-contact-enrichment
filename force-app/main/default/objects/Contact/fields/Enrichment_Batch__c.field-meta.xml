@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Enrichment_Batch__c</fullName>
+    <description>Deterministically splits contacts into batch 0 or 1 for Clay enrichment table routing.</description>
+    <externalId>false</externalId>
+    <formula>IF(CONTAINS("0123456789ABCDEFGHIJKLMNOPQRSTU", MID(Id, 15, 1)), 0, 1)</formula>
+    <formulaTreatBlanksAs>BlankAsZero</formulaTreatBlanksAs>
+    <inlineHelpText>Returns 0 or 1 based on Contact ID. Used to split contacts across two Clay tables.</inlineHelpText>
+    <label>Enrichment Batch</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>
