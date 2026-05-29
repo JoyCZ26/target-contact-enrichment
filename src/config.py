@@ -39,6 +39,6 @@ AND (
         )
         AND Account.Qualified_Out_Date__c = null
     )
-    OR Account_Stage__c IN ('Customer', 'Pipeline')
+    OR Account_Stage__c IN ('Customer', 'Pipeline', 'Churned Customer')
 )
 """.strip()
