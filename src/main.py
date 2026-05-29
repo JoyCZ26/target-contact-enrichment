@@ -53,11 +53,6 @@ def phase_push(dry_run=False):
     contact_ids = [c["Id"] for c in contacts]
     stamp_quarterly_enrich(sf, contact_ids, dry_run=dry_run)
 
-    # ── Step 1b: Clear Accurate__c for all target contacts ─────────────
-    clear_updates = [{"Id": cid, "Accurate__c": False} for cid in contact_ids]
-    print(f"Clearing Accurate__c for {len(clear_updates)} target contacts...")
-    bulk_update_contacts(sf, clear_updates, dry_run=dry_run)
-
     # ── Step 2: Compare with existing enrichment records ────────────────
     existing = fetch_existing_enrichments(sf)
     target_set = set(contact_ids)
@@ -133,6 +128,11 @@ def phase_process(dry_run=False):
         e["Contact__c"] for e in enrichments if e.get("Contact__c")
     ))
     contacts = fetch_contacts_by_ids(sf, contact_ids)
+
+    # ── Step 2b: Clear Accurate__c for all contacts being processed ────
+    clear_updates = [{"Id": cid, "Accurate__c": False} for cid in contact_ids]
+    print(f"Clearing Accurate__c for {len(clear_updates)} contacts...")
+    bulk_update_contacts(sf, clear_updates, dry_run=dry_run)
 
     # ── Step 3: Build account lookup maps ───────────────────────────────
     accounts = fetch_all_accounts(sf)
