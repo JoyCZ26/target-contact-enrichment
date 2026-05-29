@@ -1,0 +1,66 @@
+name: Quarterly Contact Enrichment
+
+on:
+  schedule:
+    # First Monday of Jan, Apr, Jul, Oct at 1pm UTC (8am ET)
+    - cron: "0 13 1-7 1,4,7,10 1"
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Which phase to run"
+        type: choice
+        options:
+          - push
+          - process
+        default: push
+      dry_run:
+        description: "Dry run (log only, no changes)"
+        type: boolean
+        default: false
+
+jobs:
+  push-to-clay:
+    if: >-
+      github.event_name == 'schedule' ||
+      inputs.phase == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Phase A — Push contacts to Clay
+        env:
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
+          SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
+          CLAY_WEBHOOK_BATCH_0: ${{ vars.CLAY_WEBHOOK_BATCH_0 }}
+          CLAY_WEBHOOK_BATCH_1: ${{ vars.CLAY_WEBHOOK_BATCH_1 }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: python -m src.main --phase push
+
+  process-results:
+    if: inputs.phase == 'process'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Phase B — Process enrichment results
+        env:
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
+          SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: python -m src.main --phase process
