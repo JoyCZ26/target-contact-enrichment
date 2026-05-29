@@ -66,7 +66,7 @@ def clear_quarterly_enrich(sf, dry_run=False):
 
     if count == 0 or dry_run:
         if dry_run:
-            print("  [DRY RUN] Would clear Quarterly_Enrich__c on {count} contacts")
+            print(f"  [DRY RUN] Would clear Quarterly_Enrich__c on {count} contacts")
         return count
 
     updates = [{"Id": r["Id"], "Quarterly_Enrich__c": False} for r in records]
