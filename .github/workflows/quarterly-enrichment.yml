@@ -2,8 +2,8 @@ name: Quarterly Contact Enrichment
 
 on:
   schedule:
-    # First Monday of Jan, Apr, Jul, Oct at 1pm UTC (8am ET)
-    - cron: "0 13 1-7 1,4,7,10 1"
+    # First Monday of Feb, May, Aug, Nov at 1pm UTC (8am ET) — fiscal quarters
+    - cron: "0 13 1-7 2,5,8,11 1"
   workflow_dispatch:
     inputs:
       phase:

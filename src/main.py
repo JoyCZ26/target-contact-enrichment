@@ -129,6 +129,11 @@ def phase_process(dry_run=False):
     ))
     contacts = fetch_contacts_by_ids(sf, contact_ids)
 
+    # ── Step 2b: Clear Accurate__c for all contacts being processed ────
+    clear_updates = [{"Id": cid, "Accurate__c": False} for cid in contact_ids]
+    print(f"Clearing Accurate__c for {len(clear_updates)} contacts...")
+    bulk_update_contacts(sf, clear_updates, dry_run=dry_run)
+
     # ── Step 3: Build account lookup maps ───────────────────────────────
     accounts = fetch_all_accounts(sf)
     domain_map, name_map = build_account_maps(accounts)
