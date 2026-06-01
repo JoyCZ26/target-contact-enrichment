@@ -22,6 +22,7 @@ from .sfdc import (
 )
 from .matching import build_account_maps, extract_domain
 from .enrichment import process_enrichment
+from .metrics import run_metrics
 
 
 def build_clay_payload(contact, enrichment_record_id):
@@ -230,6 +231,9 @@ def phase_process(dry_run=False):
     print(f"  Enrichments errored:   {len(error_ids)}")
     print(f"  URL review needed:     {len(url_review_ids)}")
 
+    # ── Step 8: Post-enrichment metrics ────────────────────────────────
+    run_metrics()
+
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
@@ -237,9 +241,9 @@ def main():
     parser = argparse.ArgumentParser(description="Quarterly Contact Enrichment")
     parser.add_argument(
         "--phase",
-        choices=["push", "process"],
+        choices=["push", "process", "metrics"],
         required=True,
-        help="push = Phase A (send to Clay), process = Phase B (process results)",
+        help="push = Phase A, process = Phase B, metrics = accuracy report only",
     )
     parser.add_argument(
         "--dry-run",
@@ -260,6 +264,8 @@ def main():
         phase_push(dry_run=dry_run)
     elif args.phase == "process":
         phase_process(dry_run=dry_run)
+    elif args.phase == "metrics":
+        run_metrics()
 
 
 if __name__ == "__main__":

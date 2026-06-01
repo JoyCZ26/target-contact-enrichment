@@ -12,6 +12,7 @@ on:
         options:
           - push
           - process
+          - metrics
         default: push
       dry_run:
         description: "Dry run (log only, no changes)"
@@ -64,3 +65,23 @@ jobs:
           SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: python -m src.main --phase process
+
+  metrics:
+    if: inputs.phase == 'metrics'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Accuracy metrics report
+        env:
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
+          SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
+        run: python -m src.main --phase metrics
