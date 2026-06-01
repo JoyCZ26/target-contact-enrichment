@@ -24,6 +24,11 @@
                 <default>false</default>
                 <label>Error</label>
             </value>
+            <value>
+                <fullName>URL Review</fullName>
+                <default>false</default>
+                <label>URL Review</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

@@ -145,6 +145,7 @@ def phase_process(dry_run=False):
     scenario_counts = defaultdict(int)
     processed_ids = []
     error_ids = []
+    url_review_ids = []
 
     for enrichment in enrichments:
         contact_id = enrichment.get("Contact__c")
@@ -156,7 +157,7 @@ def phase_process(dry_run=False):
             continue
 
         try:
-            scenario, updates, new_account = process_enrichment(
+            scenario, updates, new_account, needs_url_review = process_enrichment(
                 enrichment, contact, domain_map, name_map
             )
         except Exception as e:
@@ -165,6 +166,9 @@ def phase_process(dry_run=False):
             continue
 
         scenario_counts[scenario] += 1
+
+        if needs_url_review:
+            url_review_ids.append(enrichment["Id"])
 
         if updates:
             updates["Id"] = contact_id
@@ -215,13 +219,16 @@ def phase_process(dry_run=False):
     mark_enrichments_processed(sf, processed_ids, status="Processed", dry_run=dry_run)
     if error_ids:
         mark_enrichments_processed(sf, error_ids, status="Error", dry_run=dry_run)
+    if url_review_ids:
+        mark_enrichments_processed(sf, url_review_ids, status="URL Review", dry_run=dry_run)
 
     # ── Summary ─────────────────────────────────────────────────────────
     print(f"\n✓ Phase B complete")
-    print(f"  Contacts updated:    {len(contact_updates)}")
-    print(f"  Accounts created:    {len(new_accounts_needed)}")
+    print(f"  Contacts updated:      {len(contact_updates)}")
+    print(f"  Accounts created:      {len(new_accounts_needed)}")
     print(f"  Enrichments processed: {len(processed_ids)}")
     print(f"  Enrichments errored:   {len(error_ids)}")
+    print(f"  URL review needed:     {len(url_review_ids)}")
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────

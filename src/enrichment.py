@@ -21,6 +21,9 @@ Decision tree:
     → Viable + end date:    Create Account, reassign, Accurate, Person Has Moved = Yes
     → Not viable:           Accurate = false, Person Has Moved = Yes
 
+  Enrichment failed / no data:
+    → Person Has Moved = Maybe
+
 Always: backfill LinkedIn URL, LinkedIn Location, and Education on Contact if missing.
 """
 
@@ -36,10 +39,11 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     """Process a single enrichment record against its contact.
 
     Returns:
-        (scenario, contact_updates, new_account_info) where:
-          scenario:        int (1-4)
-          contact_updates: dict of Contact field updates (may be empty)
+        (scenario, contact_updates, new_account_info, needs_url_review) where:
+          scenario:         int (1-4)
+          contact_updates:  dict of Contact field updates (may be empty)
           new_account_info: dict for account creation (scenario 3 only) or None
+          needs_url_review: bool — True if had LinkedIn URL but enrichment failed
     """
     contact_updates = {}
     new_account_info = None
@@ -78,14 +82,16 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     if li_location and sfdc_location is None:
         contact_updates["LinkedIn_Location__c"] = li_location
 
-    # ── Enrichment failed → uncertain ───────────────────────────────────
+    # ── Enrichment failed → uncertain ─────────────────────────────────
     if enrichment_status != "Enriched":
         contact_updates["Person_Has_Moved__c"] = "Uncertain"
-        return 4, contact_updates, None
+        # Had a LinkedIn URL but enrichment still failed → URL may be bad
+        needs_url_review = bool(sfdc_linkedin_url)
+        return 4, contact_updates, None, needs_url_review
 
     if not li_company:
         contact_updates["Person_Has_Moved__c"] = "Uncertain"
-        return 4, contact_updates, None
+        return 4, contact_updates, None, False
 
     # ── Helper: apply title updates ─────────────────────────────────────
     def _apply_title():
@@ -107,7 +113,7 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
         else:
             contact_updates["Person_Has_Moved__c"] = "No"
 
-        return 1, contact_updates, None
+        return 1, contact_updates, None, False
 
     # ── Step 2: Search all SFDC Accounts for the LinkedIn company ───────
     matched_account = lookup_company_in_sfdc(
@@ -117,7 +123,7 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     if matched_account:
         contact_updates["AccountId"] = matched_account["Id"]
         contact_updates["Accurate__c"] = True
-        contact_updates["Left_Company__c"] = True
+
         _apply_title()
 
         if has_end_date:
@@ -125,14 +131,14 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
         else:
             contact_updates["Person_Has_Moved__c"] = "No"
 
-        return 2, contact_updates, None
+        return 2, contact_updates, None, False
 
     # ── Step 3: Not in SFDC — is it a viable company? ──────────────────
     if is_invalid_company(li_company, title=li_title, headline=li_headline):
         # Not a real company — nothing to update for accuracy
         contact_updates["Person_Has_Moved__c"] = "Yes"
         contact_updates["Accurate__c"] = False
-        return 4, contact_updates, None
+        return 4, contact_updates, None, False
 
     # Viable company — create new Account
     new_account_info = {
@@ -149,4 +155,4 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     else:
         contact_updates["Person_Has_Moved__c"] = "No"
 
-    return 3, contact_updates, None
+    return 3, contact_updates, new_account_info, False
