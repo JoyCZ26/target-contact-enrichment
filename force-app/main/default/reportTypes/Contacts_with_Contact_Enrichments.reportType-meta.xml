@@ -54,6 +54,11 @@
             <table>Contact.Contact_Enrichments__r</table>
         </columns>
         <columns>
+            <checkedByDefault>false</checkedByDefault>
+            <field>CreatedDate</field>
+            <table>Contact.Contact_Enrichments__r</table>
+        </columns>
+        <columns>
             <checkedByDefault>true</checkedByDefault>
             <field>Name</field>
             <table>Contact.Contact_Enrichments__r</table>

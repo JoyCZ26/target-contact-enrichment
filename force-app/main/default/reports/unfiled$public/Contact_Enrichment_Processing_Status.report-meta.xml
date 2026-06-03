@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Report xmlns="http://soap.sforce.com/2006/04/metadata">
+    <columns>
+        <field>Contact$Name</field>
+    </columns>
+    <columns>
+        <field>Contact$Account</field>
+    </columns>
+    <columns>
+        <field>Contact.Contact_Enrichments__r$CE_Company__c</field>
+    </columns>
+    <columns>
+        <field>Contact.Contact_Enrichments__r$CE_Title__c</field>
+    </columns>
+    <columns>
+        <field>Contact.Contact_Enrichments__r$Enrichment_Status__c</field>
+    </columns>
+    <columns>
+        <field>Contact.Contact_Enrichments__r$Processing_Status__c</field>
+    </columns>
+    <description>Contact enrichment processing status for current quarter</description>
+    <filter>
+        <criteriaItems>
+            <column>Contact$Quarterly_Enrich__c</column>
+            <columnToColumn>false</columnToColumn>
+            <isUnlocked>true</isUnlocked>
+            <operator>equals</operator>
+            <value>1</value>
+        </criteriaItems>
+    </filter>
+    <format>TABULAR</format>
+    <name>Contact Enrichment Processing Status</name>
+    <reportType>Contacts_with_Contact_Enrichments__c</reportType>
+    <scope>organization</scope>
+    <showDetails>true</showDetails>
+    <sortColumn>Contact.Contact_Enrichments__r$Processing_Status__c</sortColumn>
+    <sortOrder>Asc</sortOrder>
+    <timeFrameFilter>
+        <dateColumn>Contact.Contact_Enrichments__r$CreatedDate</dateColumn>
+        <interval>INTERVAL_CUSTOM</interval>
+    </timeFrameFilter>
+</Report>
