@@ -334,11 +334,17 @@ def mark_enrichments_processed(sf, enrichment_ids, status="Processed", dry_run=F
 # ── Bulk helpers ────────────────────────────────────────────────────────────
 
 def _bulk_update(sf, sobject, records):
-    """Bulk API 2.0 update — chunked into 10K-record jobs."""
-    CHUNK = 10_000
-    for i in range(0, len(records), CHUNK):
-        chunk = records[i:i + CHUNK]
-        sf.bulk2.__getattr__(sobject).update(chunk, batch_size=CHUNK)
+    """Update records — REST for small batches, Bulk API 2.0 for large."""
+    if len(records) <= 200:
+        for rec in records:
+            record_id = rec["Id"]
+            body = {k: v for k, v in rec.items() if k != "Id"}
+            sf.__getattr__(sobject).update(record_id, body)
+    else:
+        CHUNK = 10_000
+        for i in range(0, len(records), CHUNK):
+            chunk = records[i:i + CHUNK]
+            sf.bulk2.__getattr__(sobject).update(chunk, batch_size=CHUNK)
 
 
 def _bulk_upsert(sf, sobject, external_id_field, records):
