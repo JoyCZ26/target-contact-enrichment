@@ -88,12 +88,19 @@ def phase_push(dry_run=False, test_limit=None):
     # ── Step 3b: Reset returning enrichment records for re-processing ──
     if returning_ids:
         reset_updates = [
-            {"Id": existing[cid]["Id"], "Processing_Status__c": "Unprocessed"}
+            {
+                "Id": existing[cid]["Id"],
+                "Processing_Status__c": "Unprocessed",
+                "Last_Enriched_Date__c": None,
+            }
             for cid in returning_ids
         ]
-        print(f"Resetting Processing_Status__c for {len(reset_updates)} returning records...")
-        mark_enrichments_processed(sf, [u["Id"] for u in reset_updates],
-                                   status="Unprocessed", dry_run=dry_run)
+        print(f"Resetting {len(reset_updates)} returning enrichment records...")
+        from .sfdc import _bulk_update
+        if not dry_run:
+            _bulk_update(sf, "Contact_Enrichment__c", reset_updates)
+        else:
+            print(f"  [DRY RUN] Would reset {len(reset_updates)} enrichment records")
 
     # ── Step 4: Get enrichment Record IDs for all target contacts ───────
     enrichment_map = fetch_enrichment_ids_for_contacts(sf, contact_ids)
