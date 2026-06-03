@@ -57,9 +57,11 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     li_education = enrichment.get("Education_JSON__c") or ""
     li_location = enrichment.get("Location_Name__c") or ""
     li_headline = enrichment.get("Headline__c") or ""
-    enrichment_status = enrichment.get("Enrichment_Status__c") or ""
 
     has_end_date = bool(li_end_date)
+
+    # Determine if enrichment data exists (no manual status field needed)
+    has_enrichment_data = bool(li_company or li_url or li_title)
 
     # Current SFDC data
     account = contact.get("Account") or {}
@@ -82,10 +84,10 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     if li_location and sfdc_location is None:
         contact_updates["LinkedIn_Location__c"] = li_location
 
-    # ── Enrichment failed → uncertain ─────────────────────────────────
-    if enrichment_status != "Enriched":
+    # ── No enrichment data → uncertain ─────────────────────────────────
+    if not has_enrichment_data:
         contact_updates["Person_Has_Moved__c"] = "Uncertain"
-        # Had a LinkedIn URL but enrichment still failed → URL may be bad
+        # Had a LinkedIn URL in SFDC but Clay returned nothing → URL may be bad
         needs_url_review = bool(sfdc_linkedin_url)
         return 4, contact_updates, None, needs_url_review
 

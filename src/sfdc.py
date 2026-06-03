@@ -231,13 +231,12 @@ CONTACT_PROCESS_FIELDS = """
 
 
 def fetch_unprocessed_enrichments(sf):
-    """Fetch enrichment records that Clay has filled but script hasn't processed."""
+    """Fetch all unprocessed enrichment records — enriched or not."""
     print("Fetching unprocessed enrichment records...")
     records = query_all(
         sf,
         f"SELECT {ENRICHMENT_FIELDS} FROM Contact_Enrichment__c "
-        f"WHERE Processing_Status__c = 'Unprocessed' "
-        f"AND Enrichment_Status__c = 'Enriched'"
+        f"WHERE Processing_Status__c = 'Unprocessed'"
     )
     print(f"  Found {len(records)} unprocessed enrichments")
     return [_strip_attributes(r) for r in records]
