@@ -139,8 +139,10 @@ def create_enrichment_records(sf, contact_ids, dry_run=False):
     if len(records) <= 200:
         # Use REST API for small batches — bulk API can choke on tiny sets
         for rec in records:
+            ext_id = rec["Contact_Id__c"]
+            body = {k: v for k, v in rec.items() if k != "Contact_Id__c"}
             sf.Contact_Enrichment__c.upsert(
-                f"Contact_Id__c/{rec['Contact_Id__c']}", rec
+                f"Contact_Id__c/{ext_id}", body
             )
     else:
         _bulk_upsert(sf, "Contact_Enrichment__c", "Contact_Id__c", records)
