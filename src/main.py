@@ -83,6 +83,16 @@ def phase_push(dry_run=False, test_limit=None):
         enrichment_ids_to_delete = [existing[cid]["Id"] for cid in dropped_ids]
         delete_enrichment_records(sf, enrichment_ids_to_delete, dry_run=dry_run)
 
+    # ── Step 3b: Reset returning enrichment records for re-processing ──
+    if returning_ids:
+        reset_updates = [
+            {"Id": existing[cid]["Id"], "Processing_Status__c": "Unprocessed"}
+            for cid in returning_ids
+        ]
+        print(f"Resetting Processing_Status__c for {len(reset_updates)} returning records...")
+        mark_enrichments_processed(sf, [u["Id"] for u in reset_updates],
+                                   status="Unprocessed", dry_run=dry_run)
+
     # ── Step 4: Get enrichment Record IDs for all target contacts ───────
     enrichment_map = fetch_enrichment_ids_for_contacts(sf, contact_ids)
 
