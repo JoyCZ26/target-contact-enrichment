@@ -3,7 +3,7 @@ import sys
 import time
 from collections import defaultdict
 
-from .config import CLAY_WEBHOOK_BATCH_0, CLAY_WEBHOOK_BATCH_1, DRY_RUN
+from .config import CLAY_WEBHOOK_BATCH_0, CLAY_WEBHOOK_BATCH_1, DRY_RUN, get_fiscal_quarter
 from .sfdc import (
     connect_salesforce,
     clear_quarterly_enrich,
@@ -50,9 +50,11 @@ def build_clay_payload(contact, enrichment_record_id):
 def phase_push(dry_run=False, test_limit=None):
     """Phase A: Read report, manage enrichment records, push to Clay."""
     sf = connect_salesforce()
+    quarter = get_fiscal_quarter()
+    print(f"\nFiscal quarter: {quarter}\n")
 
     if test_limit:
-        print(f"\n*** TEST MODE — limited to {test_limit} contacts ***\n")
+        print(f"*** TEST MODE — limited to {test_limit} contacts ***\n")
 
     # ── Step 1: Reset and re-stamp Quarterly_Enrich__c ──────────────────
     if not test_limit:
@@ -80,7 +82,7 @@ def phase_push(dry_run=False, test_limit=None):
 
     # ── Step 3: Create new / delete stale enrichment records ────────────
     if new_ids:
-        create_enrichment_records(sf, list(new_ids), dry_run=dry_run)
+        create_enrichment_records(sf, list(new_ids), quarter=quarter, dry_run=dry_run)
 
     if dropped_ids:
         enrichment_ids_to_delete = [existing[cid]["Id"] for cid in dropped_ids]
@@ -92,6 +94,7 @@ def phase_push(dry_run=False, test_limit=None):
             {
                 "Id": existing[cid]["Id"],
                 "Processing_Status__c": "Unprocessed",
+                "Enrichment_Quarter__c": quarter,
                 "CE_Company__c": None,
                 "CE_Title__c": None,
                 "CE_Company_Domain__c": None,
@@ -148,15 +151,15 @@ def phase_push(dry_run=False, test_limit=None):
 POLL_INTERVAL = 600  # seconds between checks (10 minutes)
 
 
-def _process_batch(sf, dry_run=False):
-    """Process one batch of enrichment records that have data.
+def _process_batch(sf, quarter, dry_run=False):
+    """Process one batch of enrichment records for a specific quarter.
 
     Returns (processed_count, remaining_count)."""
 
     # ── Fetch ready enrichments ────────────────────────────────────────
-    enrichments = fetch_unprocessed_enrichments(sf)
+    enrichments = fetch_unprocessed_enrichments(sf, quarter)
     if not enrichments:
-        remaining = count_remaining_unprocessed(sf)
+        remaining = count_remaining_unprocessed(sf, quarter)
         return 0, remaining
 
     # ── Fetch referenced contacts ──────────────────────────────────────
@@ -257,7 +260,7 @@ def _process_batch(sf, dry_run=False):
 
     print(f"  Batch done: {len(processed_ids)} processed, {len(error_ids)} errors, {len(url_review_ids)} URL review")
 
-    remaining = count_remaining_unprocessed(sf)
+    remaining = count_remaining_unprocessed(sf, quarter)
     return len(processed_ids), remaining
 
 
@@ -270,8 +273,13 @@ def phase_process(dry_run=False):
     Runs every 10 minutes. If no new records appear for 6 consecutive
     checks (1 hour), assumes Clay is done and marks all remaining
     unprocessed records as Uncertain.
+
+    Only processes records for the current fiscal quarter.
     """
     sf = connect_salesforce()
+    quarter = get_fiscal_quarter()
+    print(f"\nFiscal quarter: {quarter}\n")
+
     total_processed = 0
     stale_count = 0
     iteration = 0
@@ -279,10 +287,10 @@ def phase_process(dry_run=False):
     while True:
         iteration += 1
         print(f"\n{'='*60}")
-        print(f"  Processing iteration {iteration}")
+        print(f"  Processing iteration {iteration} ({quarter})")
         print(f"{'='*60}")
 
-        processed, remaining = _process_batch(sf, dry_run=dry_run)
+        processed, remaining = _process_batch(sf, quarter, dry_run=dry_run)
         total_processed += processed
 
         print(f"\n  Total processed so far: {total_processed}")
@@ -290,7 +298,7 @@ def phase_process(dry_run=False):
 
         # All done — nothing left
         if remaining == 0:
-            print("\n✓ All enrichment records processed")
+            print(f"\n✓ All {quarter} enrichment records processed")
             break
 
         # New records were processed — reset stale counter
@@ -305,13 +313,14 @@ def phase_process(dry_run=False):
             print(f"\n  No new records for {MAX_STALE_CHECKS * POLL_INTERVAL // 60} minutes — Clay is done")
             print(f"  Marking {remaining} remaining records as Uncertain...")
 
-            # Fetch remaining blank records and mark contacts as Uncertain
+            # Fetch remaining blank records for this quarter
             remaining_records = query_all(
                 sf,
-                "SELECT Id, Contact__c FROM Contact_Enrichment__c "
-                "WHERE Processing_Status__c = 'Unprocessed' "
-                "AND CE_Company__c = null AND CE_Title__c = null "
-                "AND LinkedIn_Profile_URL__c = null"
+                f"SELECT Id, Contact__c FROM Contact_Enrichment__c "
+                f"WHERE Processing_Status__c = 'Unprocessed' "
+                f"AND Enrichment_Quarter__c = '{quarter}' "
+                f"AND CE_Company__c = null AND CE_Title__c = null "
+                f"AND LinkedIn_Profile_URL__c = null"
             )
 
             # Update contacts
@@ -333,7 +342,7 @@ def phase_process(dry_run=False):
         time.sleep(POLL_INTERVAL)
 
     # ── Final summary + metrics ────────────────────────────────────────
-    print(f"\n✓ Phase B complete — {total_processed} total enrichments processed")
+    print(f"\n✓ Phase B complete ({quarter}) — {total_processed} total enrichments processed")
     run_metrics()
 
 

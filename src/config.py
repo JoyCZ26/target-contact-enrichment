@@ -14,6 +14,35 @@ DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 SOQL_BATCH = 200          # max IDs per SOQL IN clause
 CLAY_POST_BATCH = 200     # rows per webhook POST to Clay
 
+
+# ── Fiscal quarter ─────────────────────────────────────────────────────────
+# CloudZero fiscal year starts Feb 1, FY is calendar year + 1.
+# Q1: Feb-Apr, Q2: May-Jul, Q3: Aug-Oct, Q4: Nov-Jan
+# Format: "2027-Q2"
+
+def get_fiscal_quarter():
+    """Return the current fiscal quarter label, e.g. '2027-Q2'."""
+    from datetime import date
+    today = date.today()
+    month = today.month
+    year = today.year
+
+    if month >= 2:
+        fy = year + 1
+    else:
+        fy = year
+
+    if month in (2, 3, 4):
+        q = 1
+    elif month in (5, 6, 7):
+        q = 2
+    elif month in (8, 9, 10):
+        q = 3
+    else:  # 11, 12, 1
+        q = 4
+
+    return f"{fy}-Q{q}"
+
 # ── Report reference ────────────────────────────────────────────────────────
 # Human-readable report: 00OVN000004T0IT2A0 (Target Contact Enrich List)
 # The SOQL below replicates the report's filter logic:

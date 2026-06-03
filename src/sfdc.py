@@ -124,7 +124,7 @@ def fetch_existing_enrichments(sf):
 
 # ── Step 3: Create / delete enrichment records ─────────────────────────────
 
-def create_enrichment_records(sf, contact_ids, dry_run=False):
+def create_enrichment_records(sf, contact_ids, quarter=None, dry_run=False):
     """Create blank Contact_Enrichment__c records for new contacts.
     Uses upsert on Contact_Id__c to be idempotent."""
     print(f"Creating {len(contact_ids)} new enrichment records...")
@@ -133,7 +133,8 @@ def create_enrichment_records(sf, contact_ids, dry_run=False):
         return
 
     records = [
-        {"Contact__c": cid, "Contact_Id__c": cid}
+        {"Contact__c": cid, "Contact_Id__c": cid,
+         **({"Enrichment_Quarter__c": quarter} if quarter else {})}
         for cid in contact_ids
     ]
     if len(records) <= 200:
@@ -230,14 +231,15 @@ CONTACT_PROCESS_FIELDS = """
 """.strip()
 
 
-def fetch_unprocessed_enrichments(sf):
-    """Fetch unprocessed enrichment records that have enrichment data.
+def fetch_unprocessed_enrichments(sf, quarter):
+    """Fetch unprocessed enrichment records for a specific quarter that have data.
     Data presence (company, title, or LinkedIn URL) means Clay enriched the row."""
-    print("Fetching unprocessed enrichment records with data...")
+    print(f"Fetching unprocessed enrichments for {quarter} with data...")
     records = query_all(
         sf,
         f"SELECT {ENRICHMENT_FIELDS} FROM Contact_Enrichment__c "
         f"WHERE Processing_Status__c = 'Unprocessed' "
+        f"AND Enrichment_Quarter__c = '{quarter}' "
         f"AND (CE_Company__c != null OR CE_Title__c != null "
         f"OR LinkedIn_Profile_URL__c != null)"
     )
@@ -245,13 +247,14 @@ def fetch_unprocessed_enrichments(sf):
     return [_strip_attributes(r) for r in records]
 
 
-def count_remaining_unprocessed(sf):
-    """Count enrichment records still unprocessed (no data yet or never enriched)."""
+def count_remaining_unprocessed(sf, quarter):
+    """Count enrichment records for a specific quarter still unprocessed with no data."""
     result = sf.query(
-        "SELECT COUNT(Id) total FROM Contact_Enrichment__c "
-        "WHERE Processing_Status__c = 'Unprocessed' "
-        "AND CE_Company__c = null AND CE_Title__c = null "
-        "AND LinkedIn_Profile_URL__c = null"
+        f"SELECT COUNT(Id) total FROM Contact_Enrichment__c "
+        f"WHERE Processing_Status__c = 'Unprocessed' "
+        f"AND Enrichment_Quarter__c = '{quarter}' "
+        f"AND CE_Company__c = null AND CE_Title__c = null "
+        f"AND LinkedIn_Profile_URL__c = null"
     )
     return result["records"][0]["total"]
 
