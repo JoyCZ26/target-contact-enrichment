@@ -87,12 +87,14 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     # ── No enrichment data → uncertain ─────────────────────────────────
     if not has_enrichment_data:
         contact_updates["Person_Has_Moved__c"] = "Uncertain"
+        contact_updates["Accurate__c"] = True
         # Had a LinkedIn URL in SFDC but Clay returned nothing → URL may be bad
         needs_url_review = bool(sfdc_linkedin_url)
         return 4, contact_updates, None, needs_url_review
 
     if not li_company:
         contact_updates["Person_Has_Moved__c"] = "Uncertain"
+        contact_updates["Accurate__c"] = True
         return 4, contact_updates, None, False
 
     # ── Helper: apply title updates ─────────────────────────────────────
