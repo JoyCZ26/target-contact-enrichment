@@ -11,7 +11,7 @@
             <sorted>false</sorted>
             <value>
                 <fullName>Unprocessed</fullName>
-                <default>false</default>
+                <default>true</default>
                 <label>Unprocessed</label>
             </value>
             <value>
