@@ -1,5 +1,6 @@
 import argparse
 import sys
+import time
 from collections import defaultdict
 
 from .config import CLAY_WEBHOOK_BATCH_0, CLAY_WEBHOOK_BATCH_1, DRY_RUN
@@ -14,6 +15,7 @@ from .sfdc import (
     fetch_enrichment_ids_for_contacts,
     push_to_clay,
     fetch_unprocessed_enrichments,
+    count_pending_enrichments,
     fetch_contacts_by_ids,
     fetch_all_accounts,
     create_accounts,
@@ -131,35 +133,39 @@ def phase_push(dry_run=False, test_limit=None):
 
 # ── Phase B ─────────────────────────────────────────────────────────────────
 
-def phase_process(dry_run=False):
-    """Phase B: Read enrichment results, compare, update contacts."""
-    sf = connect_salesforce()
+POLL_INTERVAL = 600  # seconds between checks (10 minutes)
 
-    # ── Step 1: Fetch unprocessed enrichments ───────────────────────────
+
+def _process_batch(sf, dry_run=False):
+    """Process one batch of Clay-touched enrichment records.
+
+    Returns (processed_count, pending_count)."""
+
+    # ── Fetch ready enrichments ────────────────────────────────────────
     enrichments = fetch_unprocessed_enrichments(sf)
     if not enrichments:
-        print("No unprocessed enrichments found. Nothing to do.")
-        return
+        pending = count_pending_enrichments(sf)
+        return 0, pending
 
-    # ── Step 2: Fetch referenced contacts ───────────────────────────────
+    # ── Fetch referenced contacts ──────────────────────────────────────
     contact_ids = list(set(
         e["Contact__c"] for e in enrichments if e.get("Contact__c")
     ))
     contacts = fetch_contacts_by_ids(sf, contact_ids)
 
-    # ── Step 2b: Clear Accurate__c for all contacts being processed ────
+    # ── Clear Accurate__c for contacts being processed ─────────────────
     clear_updates = [{"Id": cid, "Accurate__c": False} for cid in contact_ids]
     print(f"Clearing Accurate__c for {len(clear_updates)} contacts...")
     bulk_update_contacts(sf, clear_updates, dry_run=dry_run)
 
-    # ── Step 3: Build account lookup maps ───────────────────────────────
+    # ── Build account lookup maps ──────────────────────────────────────
     accounts = fetch_all_accounts(sf)
     domain_map, name_map = build_account_maps(accounts)
 
-    # ── Step 4: Process each enrichment → resolve scenario ──────────────
-    contact_updates = {}       # {contact_id: {field: value}}
-    new_accounts_needed = {}   # {domain: {Name, Website}} — deduplicated
-    scenario_to_contacts = defaultdict(list)  # for account assignment after creation
+    # ── Process each enrichment → resolve scenario ─────────────────────
+    contact_updates = {}
+    new_accounts_needed = {}
+    scenario_to_contacts = defaultdict(list)
     scenario_counts = defaultdict(int)
     processed_ids = []
     error_ids = []
@@ -192,34 +198,31 @@ def phase_process(dry_run=False):
             updates["Id"] = contact_id
             contact_updates[contact_id] = updates
 
-        # Scenario 3: track new accounts to create (dedup by domain)
         if scenario == 3 and new_account:
             domain = extract_domain(new_account.get("Website") or "")
             key = domain or new_account["Name"].lower()
             if key not in new_accounts_needed:
                 new_accounts_needed[key] = new_account
-            # Track which contacts need this new account
             scenario_to_contacts[key].append(contact_id)
 
         processed_ids.append(enrichment["Id"])
 
-    print(f"\nScenario breakdown:")
-    print(f"  S1 — Still at same company:     {scenario_counts[1]}")
-    print(f"  S2 — Moved to existing account: {scenario_counts[2]}")
-    print(f"  S3 — Moved to new company:      {scenario_counts[3]}")
-    print(f"  S4 — No data / uncertain:       {scenario_counts[4]}")
-    print(f"  Errors:                          {len(error_ids)}")
+    print(f"\n  Scenario breakdown:")
+    print(f"    S1 — Still at same company:     {scenario_counts[1]}")
+    print(f"    S2 — Moved to existing account: {scenario_counts[2]}")
+    print(f"    S3 — Moved to new company:      {scenario_counts[3]}")
+    print(f"    S4 — No data / uncertain:       {scenario_counts[4]}")
+    print(f"    Errors:                          {len(error_ids)}")
 
-    # ── Step 5: Create new Accounts (Scenario 3) ───────────────────────
+    # ── Create new Accounts (Scenario 3) ───────────────────────────────
     if new_accounts_needed:
-        print(f"\nCreating {len(new_accounts_needed)} new accounts for Scenario 3...")
+        print(f"\n  Creating {len(new_accounts_needed)} new accounts...")
         new_account_list = list(new_accounts_needed.items())
 
         if not dry_run:
             account_records = [acct for _, acct in new_account_list]
             created_ids = create_accounts(sf, account_records, dry_run=dry_run)
 
-            # Assign new AccountId to the contacts that need it
             for i, (key, _) in enumerate(new_account_list):
                 new_account_id = created_ids[i]
                 for contact_id in scenario_to_contacts.get(key, []):
@@ -228,27 +231,55 @@ def phase_process(dry_run=False):
         else:
             print(f"  [DRY RUN] Would create {len(new_accounts_needed)} accounts")
 
-    # ── Step 6: Bulk update Contacts ────────────────────────────────────
+    # ── Bulk update Contacts ───────────────────────────────────────────
     if contact_updates:
         updates_list = list(contact_updates.values())
         bulk_update_contacts(sf, updates_list, dry_run=dry_run)
 
-    # ── Step 7: Mark enrichments as Processed ───────────────────────────
+    # ── Mark enrichments ───────────────────────────────────────────────
     mark_enrichments_processed(sf, processed_ids, status="Processed", dry_run=dry_run)
     if error_ids:
         mark_enrichments_processed(sf, error_ids, status="Error", dry_run=dry_run)
     if url_review_ids:
         mark_enrichments_processed(sf, url_review_ids, status="URL Review", dry_run=dry_run)
 
-    # ── Summary ─────────────────────────────────────────────────────────
-    print(f"\n✓ Phase B complete")
-    print(f"  Contacts updated:      {len(contact_updates)}")
-    print(f"  Accounts created:      {len(new_accounts_needed)}")
-    print(f"  Enrichments processed: {len(processed_ids)}")
-    print(f"  Enrichments errored:   {len(error_ids)}")
-    print(f"  URL review needed:     {len(url_review_ids)}")
+    print(f"  Batch done: {len(processed_ids)} processed, {len(error_ids)} errors, {len(url_review_ids)} URL review")
 
-    # ── Step 8: Post-enrichment metrics ────────────────────────────────
+    pending = count_pending_enrichments(sf)
+    return len(processed_ids), pending
+
+
+def phase_process(dry_run=False):
+    """Phase B: Poll and process enrichment results until Clay is done."""
+    sf = connect_salesforce()
+    total_processed = 0
+    iteration = 0
+
+    while True:
+        iteration += 1
+        print(f"\n{'='*60}")
+        print(f"  Processing iteration {iteration}")
+        print(f"{'='*60}")
+
+        processed, pending = _process_batch(sf, dry_run=dry_run)
+        total_processed += processed
+
+        print(f"\n  Total processed so far: {total_processed}")
+        print(f"  Still waiting on Clay:  {pending}")
+
+        if pending == 0:
+            print("\n✓ All enrichment records processed — Clay is done")
+            break
+
+        if processed == 0 and pending > 0:
+            print(f"\n  No new records ready. {pending} still pending.")
+            print(f"  Waiting {POLL_INTERVAL // 60} minutes before next check...")
+            time.sleep(POLL_INTERVAL)
+        # If we processed some but there are still pending, loop immediately
+        # to pick up any more that Clay finished in the meantime
+
+    # ── Final summary + metrics ────────────────────────────────────────
+    print(f"\n✓ Phase B complete — {total_processed} total enrichments processed")
     run_metrics()
 
 

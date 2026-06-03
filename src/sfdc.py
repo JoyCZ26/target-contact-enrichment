@@ -245,6 +245,16 @@ def fetch_unprocessed_enrichments(sf):
     return [_strip_attributes(r) for r in records]
 
 
+def count_pending_enrichments(sf):
+    """Count enrichment records Clay hasn't touched yet."""
+    result = sf.query(
+        "SELECT COUNT(Id) total FROM Contact_Enrichment__c "
+        "WHERE Processing_Status__c = 'Unprocessed' "
+        "AND Last_Enriched_Date__c = null"
+    )
+    return result["records"][0]["total"]
+
+
 def fetch_contacts_by_ids(sf, contact_ids):
     """Fetch Contact records for the given IDs, batched by SOQL_BATCH."""
     print(f"Fetching {len(contact_ids)} contacts for processing...")
