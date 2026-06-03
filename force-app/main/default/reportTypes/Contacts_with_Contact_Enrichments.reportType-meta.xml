@@ -55,7 +55,7 @@
         </columns>
         <columns>
             <checkedByDefault>false</checkedByDefault>
-            <field>CreatedDate</field>
+            <field>Record_Created_Date__c</field>
             <table>Contact.Contact_Enrichments__r</table>
         </columns>
         <columns>
