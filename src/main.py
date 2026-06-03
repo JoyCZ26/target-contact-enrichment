@@ -15,7 +15,8 @@ from .sfdc import (
     fetch_enrichment_ids_for_contacts,
     push_to_clay,
     fetch_unprocessed_enrichments,
-    count_pending_enrichments,
+    count_remaining_unprocessed,
+    query_all,
     fetch_contacts_by_ids,
     fetch_all_accounts,
     create_accounts,
@@ -91,7 +92,11 @@ def phase_push(dry_run=False, test_limit=None):
             {
                 "Id": existing[cid]["Id"],
                 "Processing_Status__c": "Unprocessed",
-                "Last_Enriched_Date__c": None,
+                "CE_Company__c": None,
+                "CE_Title__c": None,
+                "CE_Company_Domain__c": None,
+                "CE_End_Date__c": None,
+                "LinkedIn_Profile_URL__c": None,
             }
             for cid in returning_ids
         ]
@@ -144,15 +149,15 @@ POLL_INTERVAL = 600  # seconds between checks (10 minutes)
 
 
 def _process_batch(sf, dry_run=False):
-    """Process one batch of Clay-touched enrichment records.
+    """Process one batch of enrichment records that have data.
 
-    Returns (processed_count, pending_count)."""
+    Returns (processed_count, remaining_count)."""
 
     # ── Fetch ready enrichments ────────────────────────────────────────
     enrichments = fetch_unprocessed_enrichments(sf)
     if not enrichments:
-        pending = count_pending_enrichments(sf)
-        return 0, pending
+        remaining = count_remaining_unprocessed(sf)
+        return 0, remaining
 
     # ── Fetch referenced contacts ──────────────────────────────────────
     contact_ids = list(set(
@@ -252,14 +257,23 @@ def _process_batch(sf, dry_run=False):
 
     print(f"  Batch done: {len(processed_ids)} processed, {len(error_ids)} errors, {len(url_review_ids)} URL review")
 
-    pending = count_pending_enrichments(sf)
-    return len(processed_ids), pending
+    remaining = count_remaining_unprocessed(sf)
+    return len(processed_ids), remaining
+
+
+MAX_STALE_CHECKS = 6  # 6 consecutive empty checks × 10 min = 1 hour
 
 
 def phase_process(dry_run=False):
-    """Phase B: Poll and process enrichment results until Clay is done."""
+    """Phase B: Poll and process enrichment results until Clay is done.
+
+    Runs every 10 minutes. If no new records appear for 6 consecutive
+    checks (1 hour), assumes Clay is done and marks all remaining
+    unprocessed records as Uncertain.
+    """
     sf = connect_salesforce()
     total_processed = 0
+    stale_count = 0
     iteration = 0
 
     while True:
@@ -268,22 +282,55 @@ def phase_process(dry_run=False):
         print(f"  Processing iteration {iteration}")
         print(f"{'='*60}")
 
-        processed, pending = _process_batch(sf, dry_run=dry_run)
+        processed, remaining = _process_batch(sf, dry_run=dry_run)
         total_processed += processed
 
         print(f"\n  Total processed so far: {total_processed}")
-        print(f"  Still waiting on Clay:  {pending}")
+        print(f"  Remaining (no data):    {remaining}")
 
-        if pending == 0:
-            print("\n✓ All enrichment records processed — Clay is done")
+        # All done — nothing left
+        if remaining == 0:
+            print("\n✓ All enrichment records processed")
             break
 
-        if processed == 0 and pending > 0:
-            print(f"\n  No new records ready. {pending} still pending.")
-            print(f"  Waiting {POLL_INTERVAL // 60} minutes before next check...")
-            time.sleep(POLL_INTERVAL)
-        # If we processed some but there are still pending, loop immediately
-        # to pick up any more that Clay finished in the meantime
+        # New records were processed — reset stale counter
+        if processed > 0:
+            stale_count = 0
+        else:
+            stale_count += 1
+            print(f"  No new records this check ({stale_count}/{MAX_STALE_CHECKS})")
+
+        # Clay appears done — no new records for 1 hour
+        if stale_count >= MAX_STALE_CHECKS:
+            print(f"\n  No new records for {MAX_STALE_CHECKS * POLL_INTERVAL // 60} minutes — Clay is done")
+            print(f"  Marking {remaining} remaining records as Uncertain...")
+
+            # Fetch remaining blank records and mark contacts as Uncertain
+            remaining_records = query_all(
+                sf,
+                "SELECT Id, Contact__c FROM Contact_Enrichment__c "
+                "WHERE Processing_Status__c = 'Unprocessed' "
+                "AND CE_Company__c = null AND CE_Title__c = null "
+                "AND LinkedIn_Profile_URL__c = null"
+            )
+
+            # Update contacts
+            contact_updates = [
+                {"Id": r["Contact__c"], "Person_Has_Moved__c": "Uncertain", "Accurate__c": True}
+                for r in remaining_records if r.get("Contact__c")
+            ]
+            if contact_updates:
+                bulk_update_contacts(sf, contact_updates, dry_run=dry_run)
+
+            # Mark enrichment records as Processed
+            remaining_ids = [r["Id"] for r in remaining_records]
+            mark_enrichments_processed(sf, remaining_ids, status="Processed", dry_run=dry_run)
+
+            total_processed += len(remaining_ids)
+            break
+
+        print(f"  Waiting {POLL_INTERVAL // 60} minutes before next check...")
+        time.sleep(POLL_INTERVAL)
 
     # ── Final summary + metrics ────────────────────────────────────────
     print(f"\n✓ Phase B complete — {total_processed} total enrichments processed")

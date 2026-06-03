@@ -231,26 +231,27 @@ CONTACT_PROCESS_FIELDS = """
 
 
 def fetch_unprocessed_enrichments(sf):
-    """Fetch unprocessed enrichment records that Clay has touched.
-    Last_Enriched_Date__c being populated means Clay processed the row
-    (whether enrichment succeeded or not)."""
-    print("Fetching unprocessed enrichment records...")
+    """Fetch unprocessed enrichment records that have enrichment data.
+    Data presence (company, title, or LinkedIn URL) means Clay enriched the row."""
+    print("Fetching unprocessed enrichment records with data...")
     records = query_all(
         sf,
         f"SELECT {ENRICHMENT_FIELDS} FROM Contact_Enrichment__c "
         f"WHERE Processing_Status__c = 'Unprocessed' "
-        f"AND Last_Enriched_Date__c != null"
+        f"AND (CE_Company__c != null OR CE_Title__c != null "
+        f"OR LinkedIn_Profile_URL__c != null)"
     )
-    print(f"  Found {len(records)} unprocessed enrichments (Clay-touched)")
+    print(f"  Found {len(records)} unprocessed enrichments with data")
     return [_strip_attributes(r) for r in records]
 
 
-def count_pending_enrichments(sf):
-    """Count enrichment records Clay hasn't touched yet."""
+def count_remaining_unprocessed(sf):
+    """Count enrichment records still unprocessed (no data yet or never enriched)."""
     result = sf.query(
         "SELECT COUNT(Id) total FROM Contact_Enrichment__c "
         "WHERE Processing_Status__c = 'Unprocessed' "
-        "AND Last_Enriched_Date__c = null"
+        "AND CE_Company__c = null AND CE_Title__c = null "
+        "AND LinkedIn_Profile_URL__c = null"
     )
     return result["records"][0]["total"]
 
