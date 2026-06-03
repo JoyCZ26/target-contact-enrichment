@@ -18,6 +18,10 @@ on:
         description: "Dry run (log only, no changes)"
         type: boolean
         default: false
+      test_limit:
+        description: "Test mode: limit to N contacts (0 = no limit)"
+        type: number
+        default: 0
 
 jobs:
   push-to-clay:
@@ -43,7 +47,9 @@ jobs:
           CLAY_WEBHOOK_BATCH_0: ${{ vars.CLAY_WEBHOOK_BATCH_0 }}
           CLAY_WEBHOOK_BATCH_1: ${{ vars.CLAY_WEBHOOK_BATCH_1 }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
-        run: python -m src.main --phase push
+        run: >-
+          python -m src.main --phase push
+          ${{ inputs.test_limit > 0 && format('--test {0}', inputs.test_limit) || '' }}
 
   process-results:
     if: inputs.phase == 'process'

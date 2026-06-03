@@ -44,15 +44,22 @@ def build_clay_payload(contact, enrichment_record_id):
 
 # ── Phase A ─────────────────────────────────────────────────────────────────
 
-def phase_push(dry_run=False):
+def phase_push(dry_run=False, test_limit=None):
     """Phase A: Read report, manage enrichment records, push to Clay."""
     sf = connect_salesforce()
 
+    if test_limit:
+        print(f"\n*** TEST MODE — limited to {test_limit} contacts ***\n")
+
     # ── Step 1: Reset and re-stamp Quarterly_Enrich__c ──────────────────
-    clear_quarterly_enrich(sf, dry_run=dry_run)
+    if not test_limit:
+        clear_quarterly_enrich(sf, dry_run=dry_run)
     contacts = fetch_target_contacts(sf)
+    if test_limit:
+        contacts = contacts[:test_limit]
     contact_ids = [c["Id"] for c in contacts]
-    stamp_quarterly_enrich(sf, contact_ids, dry_run=dry_run)
+    if not test_limit:
+        stamp_quarterly_enrich(sf, contact_ids, dry_run=dry_run)
 
     # ── Step 2: Compare with existing enrichment records ────────────────
     existing = fetch_existing_enrichments(sf)
@@ -251,6 +258,12 @@ def main():
         default=False,
         help="Log what would happen without making changes",
     )
+    parser.add_argument(
+        "--test",
+        type=int,
+        default=None,
+        help="Test mode: limit to N contacts (skips clear/stamp)",
+    )
     args = parser.parse_args()
 
     dry_run = args.dry_run or DRY_RUN
@@ -261,7 +274,7 @@ def main():
         print("=" * 60)
 
     if args.phase == "push":
-        phase_push(dry_run=dry_run)
+        phase_push(dry_run=dry_run, test_limit=args.test)
     elif args.phase == "process":
         phase_process(dry_run=dry_run)
     elif args.phase == "metrics":
