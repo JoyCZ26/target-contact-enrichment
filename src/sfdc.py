@@ -183,7 +183,7 @@ def fetch_enrichment_ids_for_contacts(sf, contact_ids):
 # ── Step 5: Push to Clay ───────────────────────────────────────────────────
 
 def push_to_clay(contacts, webhook_url, dry_run=False):
-    """POST contacts to a Clay webhook in batches of CLAY_POST_BATCH."""
+    """POST contacts to a Clay webhook — one row per request."""
     total = len(contacts)
     print(f"  Pushing {total} contacts to Clay webhook...")
 
@@ -191,18 +191,20 @@ def push_to_clay(contacts, webhook_url, dry_run=False):
         print(f"  [DRY RUN] Would POST {total} rows to {webhook_url}")
         return
 
-    for i in range(0, total, CLAY_POST_BATCH):
-        batch = contacts[i:i + CLAY_POST_BATCH]
-        resp = requests.post(webhook_url, json=batch)
+    errors = 0
+    for i, contact in enumerate(contacts):
+        resp = requests.post(webhook_url, json=contact)
         if not resp.ok:
+            errors += 1
             print(
                 f"  WARNING: Clay webhook returned {resp.status_code} "
-                f"for batch {i // CLAY_POST_BATCH + 1}: {resp.text[:200]}",
+                f"for row {i + 1}: {resp.text[:200]}",
                 file=sys.stderr,
             )
-        else:
-            sent = min(i + CLAY_POST_BATCH, total)
-            print(f"  Sent {sent}/{total} rows")
+        if (i + 1) % 100 == 0 or (i + 1) == total:
+            print(f"  Sent {i + 1}/{total} rows")
+    if errors:
+        print(f"  {errors}/{total} rows failed", file=sys.stderr)
 
 
 # ── Phase B: Fetch enrichment results ───────────────────────────────────────
