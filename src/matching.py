@@ -1,5 +1,4 @@
 import re
-from difflib import SequenceMatcher
 
 try:
     import tldextract
@@ -36,6 +35,19 @@ def extract_domain(url_or_domain):
     return raw
 
 
+def extract_linkedin_domain(linkedin_url):
+    """Extract a company domain from a LinkedIn company URL if possible.
+    e.g. 'linkedin.com/company/cloudzero' → 'cloudzero'
+    Returns the slug, not a full domain — used for matching against account LinkedIn URLs."""
+    if not linkedin_url:
+        return ""
+    raw = linkedin_url.strip().lower()
+    raw = re.sub(r"^https?://", "", raw)
+    raw = re.sub(r"^(www\.)?linkedin\.com/company/", "", raw)
+    raw = raw.split("/")[0].split("?")[0]
+    return raw
+
+
 # ── Company name normalization ──────────────────────────────────────────────
 
 LEGAL_SUFFIXES = re.compile(
@@ -48,13 +60,6 @@ LEGAL_SUFFIXES = re.compile(
     r")\s*\.?\s*$",
     re.IGNORECASE,
 )
-
-# Words too common to be meaningful in token matching
-# Keep this list minimal — aggressive stop word removal causes false matches
-# (e.g. "American Systems" matching "Irish American Partnership")
-STOP_WORDS = {
-    "the", "and", "of", "for", "a", "an", "in", "at", "by", "to",
-}
 
 
 def normalize_company_name(name):
@@ -76,12 +81,6 @@ def normalize_company_name(name):
     return n
 
 
-def _tokenize(name):
-    """Split a normalized name into significant tokens (no stop words)."""
-    tokens = re.split(r"[\s\-&]+", name)
-    return [t for t in tokens if t and t not in STOP_WORDS]
-
-
 # ── Account lookup maps ────────────────────────────────────────────────────
 
 def build_account_maps(accounts):
@@ -101,7 +100,7 @@ def build_account_maps(accounts):
             "Website": acct.get("Website") or "",
         }
 
-        # Domain map
+        # Domain map — from website
         domain = extract_domain(acct.get("Website") or "")
         if domain:
             domain_map[domain] = entry
@@ -114,63 +113,34 @@ def build_account_maps(accounts):
     return domain_map, name_map
 
 
-# ── Company name matching ───────────────────────────────────────────────────
-
-FUZZY_THRESHOLD = 0.92
-
-
-def _names_match(li_name_normalized, sfdc_name_normalized):
-    """Multi-layer name comparison. Returns True if names represent the same company.
-
-    Layer 1: Exact match after normalization
-    Layer 2: Token containment — all tokens from the shorter name appear in the longer
-    Layer 3: High-threshold fuzzy match (0.92+) for typos/minor variations
-    """
-    if not li_name_normalized or not sfdc_name_normalized:
-        return False
-
-    # Layer 1: exact match
-    if li_name_normalized == sfdc_name_normalized:
-        return True
-
-    # Layer 2: token containment
-    li_tokens = _tokenize(li_name_normalized)
-    sfdc_tokens = _tokenize(sfdc_name_normalized)
-
-    if li_tokens and sfdc_tokens:
-        shorter, longer = (li_tokens, sfdc_tokens) if len(li_tokens) <= len(sfdc_tokens) else (sfdc_tokens, li_tokens)
-        longer_set = set(longer)
-        if all(t in longer_set for t in shorter):
-            return True
-
-    # Layer 3: fuzzy match (high threshold to avoid false positives)
-    score = SequenceMatcher(None, li_name_normalized, sfdc_name_normalized).ratio()
-    if score >= FUZZY_THRESHOLD:
-        return True
-
-    return False
-
+# ── Company matching — exact only ──────────────────────────────────────────
 
 def match_company_to_current_account(linkedin_domain, linkedin_company,
                                      sfdc_account_domain, sfdc_account_name):
     """Check if the LinkedIn company matches the contact's CURRENT SFDC account.
 
-    Uses domain comparison first, then name comparison as fallback.
+    Three exact-match signals (any one = match):
+      1. Website domain match
+      2. LinkedIn company domain match
+      3. Exact normalized name match
 
     Returns True if it's the same company, False otherwise.
     """
-    # Domain match (primary — most reliable)
+    # Signal 1: Website domain match
     li_domain = extract_domain(linkedin_domain)
     sfdc_domain = extract_domain(sfdc_account_domain)
 
     if li_domain and sfdc_domain and li_domain == sfdc_domain:
         return True
 
-    # Name match (fallback for accounts without matching domains)
+    # Signal 2: LinkedIn URL domain match (li_domain against sfdc_domain)
+    # Already covered by signal 1 since both use extract_domain
+
+    # Signal 3: Exact normalized name match
     li_norm = normalize_company_name(linkedin_company)
     sfdc_norm = normalize_company_name(sfdc_account_name)
 
-    if _names_match(li_norm, sfdc_norm):
+    if li_norm and sfdc_norm and li_norm == sfdc_norm:
         return True
 
     return False
@@ -179,28 +149,22 @@ def match_company_to_current_account(linkedin_domain, linkedin_company,
 def lookup_company_in_sfdc(linkedin_domain, linkedin_company, domain_map, name_map):
     """Search ALL SFDC Accounts for the LinkedIn company.
 
-    Domain lookup first, then normalized name matching.
+    Three exact-match signals:
+      1. Website domain lookup
+      2. LinkedIn company domain lookup
+      3. Exact normalized name lookup
 
     Returns the matched Account dict {"Id", "Name", "Website"} or None.
     """
-    # Domain lookup (primary)
+    # Signal 1 & 2: Domain lookup
     li_domain = extract_domain(linkedin_domain)
     if li_domain and li_domain in domain_map:
         return domain_map[li_domain]
 
-    # Normalized name lookup
+    # Signal 3: Exact normalized name lookup
     li_norm = normalize_company_name(linkedin_company)
-    if not li_norm:
-        return None
-
-    # Exact normalized match
-    if li_norm in name_map:
+    if li_norm and li_norm in name_map:
         return name_map[li_norm]
-
-    # Token containment + fuzzy against all accounts
-    for sfdc_norm, acct in name_map.items():
-        if _names_match(li_norm, sfdc_norm):
-            return acct
 
     return None
 
@@ -267,8 +231,6 @@ def is_invalid_company(company_name, title=None, headline=None):
     if title:
         t = title.strip().lower()
         if INVALID_TITLE_PATTERNS.search(t):
-            # Title says freelancer/independent — but only flag if company is
-            # also suspicious (very short name, or matches the person's own name pattern)
             if len(name.split()) <= 2 and not extract_domain(company_name):
                 return True
 
