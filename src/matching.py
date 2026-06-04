@@ -50,11 +50,10 @@ LEGAL_SUFFIXES = re.compile(
 )
 
 # Words too common to be meaningful in token matching
+# Keep this list minimal — aggressive stop word removal causes false matches
+# (e.g. "American Systems" matching "Irish American Partnership")
 STOP_WORDS = {
     "the", "and", "of", "for", "a", "an", "in", "at", "by", "to",
-    "technologies", "technology", "tech", "software", "services",
-    "solutions", "systems", "consulting", "digital", "global",
-    "international", "labs", "studio", "studios", "media",
 }
 
 
