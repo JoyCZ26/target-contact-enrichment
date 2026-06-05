@@ -8,9 +8,22 @@ Every quarter, we need to verify that our target contacts are still at the compa
 
 1. **Pushes contacts to Clay** for LinkedIn enrichment
 2. **Waits for Clay** to look up each contact on LinkedIn and write results back to Salesforce
-3. **Compares LinkedIn data against Salesforce** to determine if each contact is still at the right company
-4. **Updates Salesforce** with the results (accurate, moved, uncertain, etc.)
-5. **Reports metrics** on contact accuracy across account segments
+3. **Previews the results** so you can review before anything changes
+4. **Compares LinkedIn data against Salesforce** to determine if each contact is still at the right company
+5. **Updates Salesforce** with the results (accurate, moved, uncertain, etc.)
+6. **Reports metrics** on contact accuracy across account segments
+
+---
+
+## Quarterly Workflow (Step by Step)
+
+This is the recommended order of operations each quarter:
+
+1. **Dispatch `push`** — sends contacts to Clay
+2. *(wait for Clay to enrich — hours to days)*
+3. **Dispatch `process` with `preview` checked** — runs all comparison logic, prints per-contact scenario results, writes nothing. Review the output.
+4. If results look good → **Dispatch `process`** (without preview) — applies all updates to SFDC
+5. Results print automatically at the end with accuracy metrics
 
 ---
 
@@ -47,66 +60,70 @@ Sends this quarter's target contacts to Clay for enrichment.
 
 ---
 
+### Phase B: Preview (`--phase process --preview`)
+
+Runs all comparison logic and prints per-contact results **without writing anything to SFDC**. Use this to review before committing.
+
+**Output shows:**
+- Scenario breakdown (counts per scenario)
+- Every contact listed under their scenario with:
+  - Contact name and current SFDC account
+  - LinkedIn company and domain (for S2/S3)
+  - Whether a new account would be created (S3)
+  - Whether the experience has an end date
+
+**Always run preview first.** This is your chance to spot-check the matching logic before it touches real data.
+
+---
+
 ### Phase B: Process (`--phase process`)
 
-Reads enrichment results from Salesforce and updates contacts based on what LinkedIn says.
+Reads enrichment results from Salesforce and updates contacts based on what LinkedIn says. Only runs on the current fiscal quarter's records.
 
 **What it does, step by step:**
 
-1. **Detects the fiscal quarter** — only processes records tagged with this quarter.
+1. **Polls every 10 minutes** for enrichment records that Clay has written data to. A record is "ready" when it has a company name, title, or LinkedIn URL populated by Clay.
 
-2. **Polls every 10 minutes** for enrichment records that Clay has written data to. An enrichment record is "ready" when it has a company name, title, or LinkedIn URL populated by Clay.
-
-3. **For each batch of ready records**, runs the comparison logic:
+2. **For each batch of ready records**, runs the comparison logic:
 
    **Step 1: Does LinkedIn match the current SFDC account?**
-   - Compares the LinkedIn company domain against the SFDC account website (primary signal)
-   - Falls back to company name matching: strips legal suffixes (Inc, LLC, etc.), checks token containment, then fuzzy match at 92% threshold
-   - **Match + no end date** = Contact is at the right company. `Accurate = true`, `Person Has Moved = No`
-   - **Match + end date on experience** = They were there but left. `Accurate = true`, `Person Has Moved = Yes`
+   - Compares LinkedIn company domain against the SFDC account website domain (exact match)
+   - Falls back to exact normalized name match (strips legal suffixes like Inc, LLC, Ltd — then exact compare)
+   - **Match + no end date** = `Accurate = true`, `Person Has Moved = No`
+   - **Match + end date** = `Accurate = true`, `Person Has Moved = Yes`
 
    **Step 2: Does LinkedIn match ANY SFDC account?**
-   - Searches all accounts by domain first, then by name
-   - **Found** = Contact moved to a different account we already know about. Reassigns the contact's AccountId. `Accurate = true`, `Person Has Moved` based on end date.
+   - Searches all accounts by exact domain, then exact normalized name
+   - **Found** = Reassigns the contact's AccountId. `Accurate = true`, `Person Has Moved` based on end date.
 
    **Step 3: Company not in SFDC — is it a real company?**
-   - Checks if the company name is actually a real company (filters out "Self-employed", "Freelance", "Retired", "Career Break", etc.)
+   - Filters out non-companies: "Self-employed", "Freelance", "Retired", "Career Break", etc.
    - **Real company** = Creates a new Account in SFDC, reassigns contact. `Accurate = true`, `Person Has Moved` based on end date.
    - **Not a real company** = `Accurate = false`, `Person Has Moved = Yes`
 
    **No enrichment data at all:**
-   - Clay couldn't find them or couldn't enrich. `Accurate = true`, `Person Has Moved = Uncertain`
-   - If the contact had a LinkedIn URL in SFDC but Clay still returned nothing, the enrichment record gets flagged as `URL Review` (the URL might be bad/outdated)
+   - Clay couldn't find or enrich them. `Accurate = true`, `Person Has Moved = Uncertain`
+   - If the contact had a LinkedIn URL in SFDC but Clay returned nothing, the enrichment record gets flagged as `URL Review` (the URL might be bad/outdated)
 
-4. **Always backfills** LinkedIn URL, LinkedIn Location, and Education on the Contact if SFDC is missing those fields and Clay found them.
+3. **Backfills missing fields** — LinkedIn URL, LinkedIn Location, and Education on the Contact if SFDC is missing them and Clay found them.
 
-5. **Always updates Title** on the Contact if LinkedIn shows a different title.
+4. **Updates Title** on the Contact if LinkedIn shows a different title.
 
-6. **Keeps polling** until one of two things happens:
+5. **Keeps polling** until one of two things happens:
    - All enrichment records for this quarter have been processed (remaining = 0)
-   - No new records have appeared for **1 hour** (6 consecutive empty checks at 10-minute intervals). At this point, Clay is assumed done. All remaining blank records get marked `Person Has Moved = Uncertain`, `Accurate = true`.
+   - No new records have appeared for **1 hour** (6 consecutive empty checks). Clay is assumed done. All remaining blank records get marked `Uncertain`.
 
-7. **Prints accuracy metrics** across 5 account segments when complete.
+6. **Prints accuracy metrics** when complete.
 
 ---
 
 ### Metrics (`--phase metrics`)
 
-Prints a post-enrichment accuracy report. Can run standalone or runs automatically at the end of Phase B.
+Prints a post-enrichment accuracy report. Runs automatically at the end of Phase B, or standalone.
 
-Measures across 5 segments:
-- All Owned Accounts (excl. Customers)
-- Target Accounts
-- ICPs
-- Tiered Accounts
-- Customer Accounts
+Measures across 5 segments: All Owned Accounts (excl. Customers), Target Accounts, ICPs, Tiered Accounts, Customer Accounts.
 
-For each segment:
-- Number of target contacts
-- % target contact accuracy (Accurate = true)
-- Number of accounts
-- % accounts with target contacts
-- % accounts with 90%+ target contact accuracy
+For each: target contact count, % accuracy, account count, % accounts with target contacts, % accounts with 90%+ accuracy.
 
 ---
 
@@ -121,75 +138,84 @@ Go to **Actions > Quarterly Contact Enrichment > Run workflow**:
 | Phase | `push` / `process` / `metrics` | Which phase to run |
 | Dry run | true / false | Log only, no changes |
 | Test limit | 0 (no limit) or N | Limit to N contacts for testing |
-
-**Quarterly workflow:**
-1. Dispatch `push` — contacts go to Clay
-2. Dispatch `process` — polls until Clay is done, then updates SFDC
+| Preview | true / false | Run Phase B logic without writing |
 
 ### From command line
 
 ```bash
+# Phase A: push contacts to Clay
 python -m src.main --phase push
+
+# Phase B: preview results (no writes)
+python -m src.main --phase process --preview
+
+# Phase B: apply results
 python -m src.main --phase process
+
+# Metrics only
 python -m src.main --phase metrics
-python -m src.main --phase push --dry-run
+
+# Testing
 python -m src.main --phase push --test 5
+python -m src.main --phase push --dry-run
 ```
 
 ---
 
 ## Guardrails and Safety
 
+### Preview before applying
+**Always run `--preview` first.** It shows every contact's scenario and planned updates without touching SFDC. Review the output, then run without preview to apply.
+
 ### Quarter isolation
-Every enrichment record is stamped with the fiscal quarter (e.g. `2027-Q2`). Phase B only processes records matching the current quarter. Old quarters' records are completely invisible — no cross-quarter contamination.
+Every enrichment record is stamped with the fiscal quarter (e.g. `2027-Q2`). Phase B only processes records matching the current quarter. Old quarters are invisible — no cross-quarter contamination.
+
+### Company matching is exact only
+Matching uses three exact signals — no fuzzy matching, no partial word matching:
+1. **Exact domain match** (cloudzero.com = cloudzero.com)
+2. **Exact normalized name match** (CloudZero, Inc. = CloudZero — legal suffixes stripped)
+3. **Exact LinkedIn URL domain match**
+
+This prevents false positives like "Irish American Partnership" matching "American Systems."
 
 ### Dry run mode
-Use `--dry-run` or check the dry run box in GitHub Actions. The script connects to SFDC, runs all the logic, and logs everything it would do — but makes zero changes. Always dry run first on a new quarter.
+Use `--dry-run` for Phase A to log everything without making changes.
 
 ### Test mode
-Use `--test 5` to limit Phase A to 5 contacts. Skips the clear/stamp steps so it doesn't disrupt the full population. Good for verifying the Clay integration end to end.
+Use `--test 5` to limit Phase A to 5 contacts. Skips the clear/stamp steps so it doesn't disrupt the full population.
 
 ### Idempotent enrichment records
-Enrichment records use `Contact_Id__c` as an external ID for upsert. Running Phase A twice won't create duplicates.
+Enrichment records use `Contact_Id__c` as an external ID. Running Phase A twice won't create duplicates.
 
 ### Processing status
-Each enrichment record tracks its state: `Unprocessed` > `Processed` / `Error` / `URL Review`. Phase B only touches `Unprocessed` records, so re-running is safe.
-
-### Company matching
-Uses a conservative 3-layer approach to avoid false matches:
-1. Domain comparison (most reliable — cloudzero.com = cloudzero.com)
-2. Normalized name with token containment (CloudZero = CloudZero, Inc.)
-3. Fuzzy match at 92% threshold (catches typos without false positives)
-
-### Invalid company detection
-Filters out non-company entries from LinkedIn: freelancers, self-employed, retired, career breaks, students, "open to work", etc. These don't trigger account creation.
+Each enrichment record tracks: `Unprocessed` > `Processed` / `Error` / `URL Review`. Phase B only touches `Unprocessed` records, so re-running is safe.
 
 ---
 
 ## Important Gotchas
 
 ### Clay table webhook limits
-Each Clay table has a **50K lifetime webhook row limit**. With ~32K contacts per table per quarter, you'll need to duplicate the Clay workbook and update the webhook URLs in GitHub every 1-2 quarters.
+Each Clay table has a **50K lifetime webhook row limit**. With ~32K contacts per table per quarter, you'll need to **duplicate the Clay workbook and update webhook URLs** every 1-2 quarters.
 
 To update: **GitHub repo > Settings > Variables > Actions** > update `CLAY_WEBHOOK_BATCH_0` and `CLAY_WEBHOOK_BATCH_1`.
 
 ### Clay auto-run must be ON
-The Clay tables must have **Auto-run enabled** in table settings. Otherwise enrichment columns won't fire when rows come in from the webhook.
+The Clay tables must have **Auto-run enabled** in table settings. Otherwise enrichment columns won't fire when rows come in.
 
 ### Clay Update Record mapping
-Clay's "Update Record" column writes enrichment results back to the `Contact_Enrichment__c` record in SFDC. The field mappings (CE_Company__c, CE_Title__c, etc.) are configured in the Clay table, not in this code. If a field isn't mapped in Clay, the script won't see it.
+Clay's "Update Record" column writes enrichment results back to `Contact_Enrichment__c` in SFDC. The field mappings are configured in the Clay table, not in this code. If a field isn't mapped in Clay, the script won't see it.
 
 ### Phase B timeout
-Phase B gives up after **1 hour of no new records** appearing. If Clay is genuinely still running (e.g. rate-limited), you can dispatch `process` again — it will pick up where it left off since it only processes `Unprocessed` records.
+Phase B gives up after **1 hour of no new records**. If Clay is still running (e.g. rate-limited), dispatch `process` again — it picks up where it left off since it only processes `Unprocessed` records.
 
 ### Don't run Phase A twice in the same quarter
-Phase A clears and re-stamps everything. Running it twice would reset enrichment records that Clay already enriched, losing that data. If you need to re-push, delete the enrichment records first.
+Phase A resets enrichment records. Running it twice would clear data Clay already wrote. If you need to re-push, delete the enrichment records first.
 
 ### Contacts without LinkedIn URLs or titles
-Contacts missing a LinkedIn URL won't be found by Clay's "Enrich Person". Contacts missing a Title won't match the target contact criteria (CFO, CTO, etc.) and won't even be in the population. Handle pre-enrichment of these contacts separately before running this pipeline.
+Contacts missing a LinkedIn URL won't be found by Clay's "Enrich Person". Contacts missing a Title won't match target contact criteria and won't be in the population. Handle pre-enrichment separately before running this pipeline.
 
 ### The Accurate field
-`Accurate__c` gets cleared to `false` when Phase B starts processing a batch. Then each contact gets re-evaluated. If Phase B crashes mid-batch, some contacts may show `Accurate = false` until the next run.
+`Accurate__c` gets cleared to `false` when Phase B processes a batch, then re-set based on comparison results. If Phase B crashes mid-batch, some contacts may show `Accurate = false` until the next run.
 
 ---
 
@@ -233,6 +259,7 @@ Contacts missing a LinkedIn URL won't be found by Clay's "Enrich Person". Contac
 | `Contact_Id__c` | External ID for upsert (= Contact ID) |
 | `Enrichment_Quarter__c` | Which quarter this record belongs to (e.g. `2027-Q2`) |
 | `Processing_Status__c` | Unprocessed / Processed / Error / URL Review |
+| `Record_Created_Date__c` | Formula — mirrors CreatedDate for report filtering |
 | `CE_Company__c` | LinkedIn company name (written by Clay) |
 | `CE_Title__c` | LinkedIn title (written by Clay) |
 | `CE_Company_Domain__c` | LinkedIn company domain (written by Clay) |
@@ -245,10 +272,10 @@ Contacts missing a LinkedIn URL won't be found by Clay's "Enrich Person". Contac
 ## Monitoring a Run
 
 ### In GitHub Actions
-Watch the workflow run log. It prints progress for every step.
+Watch the workflow run log. It prints progress for every step, including per-contact scenario details.
 
 ### In Salesforce
-Use the **"Contact Enrichment Processing Status"** report (in Public Reports). Filter by `Quarterly Enrich = true` to see this quarter's contacts and their enrichment status.
+Use the **"Contact Enrichment Processing Status"** report (in Public Reports). Filter by `Quarterly Enrich = true` to see this quarter's contacts and their processing status.
 
 Or run this SOQL in Developer Console:
 ```sql
