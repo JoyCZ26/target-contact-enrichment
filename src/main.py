@@ -151,10 +151,20 @@ def phase_push(dry_run=False, test_limit=None):
 POLL_INTERVAL = 600  # seconds between checks (10 minutes)
 
 
-def _process_batch(sf, quarter, dry_run=False):
+SCENARIO_LABELS = {
+    1: "S1 — Still at same company",
+    2: "S2 — Moved to existing account",
+    3: "S3 — Moved to new company",
+    4: "S4 — No data / uncertain",
+}
+
+
+def _process_batch(sf, quarter, dry_run=False, preview=False):
     """Process one batch of enrichment records for a specific quarter.
 
-    Returns (processed_count, remaining_count)."""
+    If preview=True, runs all logic and prints results but does NOT write
+    any updates to SFDC. Returns (processed_count, remaining_count).
+    """
 
     # ── Fetch ready enrichments ────────────────────────────────────────
     enrichments = fetch_unprocessed_enrichments(sf, quarter)
@@ -168,11 +178,6 @@ def _process_batch(sf, quarter, dry_run=False):
     ))
     contacts = fetch_contacts_by_ids(sf, contact_ids)
 
-    # ── Clear Accurate__c for contacts being processed ─────────────────
-    clear_updates = [{"Id": cid, "Accurate__c": False} for cid in contact_ids]
-    print(f"Clearing Accurate__c for {len(clear_updates)} contacts...")
-    bulk_update_contacts(sf, clear_updates, dry_run=dry_run)
-
     # ── Build account lookup maps ──────────────────────────────────────
     accounts = fetch_all_accounts(sf)
     domain_map, name_map = build_account_maps(accounts)
@@ -182,6 +187,7 @@ def _process_batch(sf, quarter, dry_run=False):
     new_accounts_needed = {}
     scenario_to_contacts = defaultdict(list)
     scenario_counts = defaultdict(int)
+    scenario_details = defaultdict(list)  # {scenario: [{contact details}]}
     processed_ids = []
     error_ids = []
     url_review_ids = []
@@ -206,6 +212,23 @@ def _process_batch(sf, quarter, dry_run=False):
 
         scenario_counts[scenario] += 1
 
+        # Track per-contact details for review
+        contact_name = f"{contact.get('FirstName') or ''} {contact.get('LastName') or ''}".strip()
+        sfdc_account = (contact.get("Account") or {}).get("Name") or "(no account)"
+        li_company = enrichment.get("CE_Company__c") or "(no data)"
+        li_domain = enrichment.get("CE_Company_Domain__c") or ""
+        detail = {
+            "contact_id": contact_id,
+            "contact_name": contact_name,
+            "sfdc_account": sfdc_account,
+            "li_company": li_company,
+            "li_domain": li_domain,
+            "updates": updates,
+        }
+        if new_account:
+            detail["new_account"] = new_account
+        scenario_details[scenario].append(detail)
+
         if needs_url_review:
             url_review_ids.append(enrichment["Id"])
 
@@ -222,6 +245,7 @@ def _process_batch(sf, quarter, dry_run=False):
 
         processed_ids.append(enrichment["Id"])
 
+    # ── Print scenario breakdown ──────────────────────────────────────
     print(f"\n  Scenario breakdown:")
     print(f"    S1 — Still at same company:     {scenario_counts[1]}")
     print(f"    S2 — Moved to existing account: {scenario_counts[2]}")
@@ -229,9 +253,38 @@ def _process_batch(sf, quarter, dry_run=False):
     print(f"    S4 — No data / uncertain:       {scenario_counts[4]}")
     print(f"    Errors:                          {len(error_ids)}")
 
+    # ── Print per-contact details ─────────────────────────────────────
+    print(f"\n  Per-contact results:")
+    for scenario in sorted(scenario_details.keys()):
+        label = SCENARIO_LABELS.get(scenario, f"S{scenario}")
+        print(f"\n    {label}:")
+        for d in scenario_details[scenario]:
+            line = f"      {d['contact_name']} ({d['sfdc_account']})"
+            if scenario in (2, 3):
+                line += f" → {d['li_company']}"
+                if d.get('li_domain'):
+                    line += f" ({d['li_domain']})"
+            if scenario == 3 and d.get('new_account'):
+                line += " [NEW ACCOUNT]"
+            if d.get('updates', {}).get('Person_Has_Moved__c') == 'Yes':
+                line += " [HAS END DATE]"
+            print(line)
+
+    # ── Preview mode: stop here ───────────────────────────────────────
+    if preview:
+        print(f"\n  *** PREVIEW MODE — no changes written to SFDC ***")
+        print(f"  Run without --preview to apply these updates.")
+        remaining = count_remaining_unprocessed(sf, quarter)
+        return len(processed_ids), remaining
+
+    # ── Clear Accurate__c for contacts being processed ─────────────────
+    clear_updates = [{"Id": cid, "Accurate__c": False} for cid in contact_ids]
+    print(f"\n  Clearing Accurate__c for {len(clear_updates)} contacts...")
+    bulk_update_contacts(sf, clear_updates, dry_run=dry_run)
+
     # ── Create new Accounts (Scenario 3) ───────────────────────────────
     if new_accounts_needed:
-        print(f"\n  Creating {len(new_accounts_needed)} new accounts...")
+        print(f"  Creating {len(new_accounts_needed)} new accounts...")
         new_account_list = list(new_accounts_needed.items())
 
         if not dry_run:
@@ -267,18 +320,24 @@ def _process_batch(sf, quarter, dry_run=False):
 MAX_STALE_CHECKS = 6  # 6 consecutive empty checks × 10 min = 1 hour
 
 
-def phase_process(dry_run=False):
+def phase_process(dry_run=False, preview=False):
     """Phase B: Poll and process enrichment results until Clay is done.
 
-    Runs every 10 minutes. If no new records appear for 6 consecutive
-    checks (1 hour), assumes Clay is done and marks all remaining
-    unprocessed records as Uncertain.
+    If preview=True, runs logic once and prints results without writing.
+    Otherwise polls every 10 minutes until Clay is done.
 
     Only processes records for the current fiscal quarter.
     """
     sf = connect_salesforce()
     quarter = get_fiscal_quarter()
     print(f"\nFiscal quarter: {quarter}\n")
+
+    if preview:
+        print("=" * 60)
+        print("  PREVIEW MODE — analyzing only, no changes will be made")
+        print("=" * 60)
+        _process_batch(sf, quarter, dry_run=True, preview=True)
+        return
 
     total_processed = 0
     stale_count = 0
@@ -368,6 +427,12 @@ def main():
         default=None,
         help="Test mode: limit to N contacts (skips clear/stamp)",
     )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        default=False,
+        help="Preview mode: run Phase B logic and show results without writing",
+    )
     args = parser.parse_args()
 
     dry_run = args.dry_run or DRY_RUN
@@ -380,7 +445,7 @@ def main():
     if args.phase == "push":
         phase_push(dry_run=dry_run, test_limit=args.test)
     elif args.phase == "process":
-        phase_process(dry_run=dry_run)
+        phase_process(dry_run=dry_run, preview=args.preview)
     elif args.phase == "metrics":
         run_metrics()
 

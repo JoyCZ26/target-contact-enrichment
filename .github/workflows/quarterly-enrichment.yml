@@ -22,6 +22,10 @@ on:
         description: "Test mode: limit to N contacts (0 = no limit)"
         type: number
         default: 0
+      preview:
+        description: "Preview mode: show Phase B results without writing"
+        type: boolean
+        default: false
 
 jobs:
   push-to-clay:
@@ -71,7 +75,9 @@ jobs:
           SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
           SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
-        run: python -m src.main --phase process
+        run: >-
+          python -m src.main --phase process
+          ${{ inputs.preview && '--preview' || '' }}
 
   metrics:
     if: inputs.phase == 'metrics'
