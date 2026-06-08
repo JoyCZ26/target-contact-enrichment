@@ -22,6 +22,7 @@ A contact is included in the quarterly enrichment if it meets **both** condition
   - Account Fit = High or Medium
   - ABX Tier = Tier 1, 2, or 3
   - Account Executive Owner is assigned (not blank)
+  - 1st Gen Prospect
 - **AND** Qualified Out Date is blank (not qualified out)
 
 **Path 2 — Account is active:**
@@ -70,7 +71,7 @@ Sends this quarter's target contacts to Clay for enrichment.
 
 3. **Fetches this quarter's target contacts** using SOQL that mirrors the Target Contact Enrich List report. The criteria:
    - Contact is a CFO, CTO, VP of Infrastructure, or Target Contact
-   - AND their account qualifies: Target Account, ICP, ICP (FY27), High/Medium fit, Tiered (ABX Tier 1-3), or has an AE assigned — and is NOT qualified out
+   - AND their account qualifies: Target Account, ICP, ICP (FY27), High/Medium fit, Tiered (ABX Tier 1-3), has an AE assigned, or is a 1st Gen Prospect — and is NOT qualified out
    - OR their account is a Customer, Pipeline, or Churned Customer
 
 4. **Stamps `Quarterly_Enrich__c = true`** on all contacts in this quarter's batch.

@@ -46,7 +46,7 @@ def get_fiscal_quarter():
 # ── Report reference ────────────────────────────────────────────────────────
 # Human-readable report: 00OVN000004T0IT2A0 (Target Contact Enrich List)
 # The SOQL below replicates the report's filter logic:
-#   (1 OR 2 OR 3 OR 4) AND (((5 OR 6 OR 8 OR 9 OR 11 OR 12) AND 7) OR 10)
+#   (1 OR 2 OR 3 OR 4) AND (((5 OR 6 OR 8 OR 9 OR 11 OR 12 OR 13) AND 7) OR 10)
 #
 #   1  = CFO Contact
 #   2  = CTO Contact
@@ -60,6 +60,7 @@ def get_fiscal_quarter():
 #   10 = Account Stage = Customer, Pipeline, Churned Customer
 #   11 = Ideal Customer Profile (FY27)
 #   12 = Account Executive Owner is not blank
+#   13 = 1st Gen Prospect
 TARGET_CONTACTS_SOQL = """
 SELECT Id, FirstName, LastName, Email, Title,
        LinkedIn_URL__c, Enrichment_Batch__c, Contact_ID_18__c,
@@ -80,6 +81,7 @@ AND (
             OR Account.ABX_Tier__c IN ('Tier 1', 'Tier 2', 'Tier 3')
             OR Account.Ideal_Customer_Profile_FY27__c = true
             OR Account.Account_Executive_Owner__c != null
+            OR Account.X1st_Gen_Prospect__c = true
         )
         AND Account.Qualified_Out_Date__c = null
     )
