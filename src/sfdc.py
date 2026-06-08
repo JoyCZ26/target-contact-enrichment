@@ -338,7 +338,7 @@ def mark_enrichments_processed(sf, enrichment_ids, status="Processed", dry_run=F
 # ── Bulk helpers ────────────────────────────────────────────────────────────
 
 def _bulk_update(sf, sobject, records):
-    """Update records — REST for small batches, Bulk API 2.0 for large."""
+    """Update records — REST for small batches, Bulk API for large."""
     if len(records) <= 200:
         for rec in records:
             record_id = rec["Id"]
@@ -348,7 +348,7 @@ def _bulk_update(sf, sobject, records):
         CHUNK = 10_000
         for i in range(0, len(records), CHUNK):
             chunk = records[i:i + CHUNK]
-            sf.bulk2.__getattr__(sobject).update(chunk, batch_size=CHUNK)
+            sf.bulk.__getattr__(sobject).update(chunk)
 
 
 def _bulk_upsert(sf, sobject, external_id_field, records):
@@ -360,7 +360,7 @@ def _bulk_upsert(sf, sobject, external_id_field, records):
 
 
 def _bulk_delete(sf, sobject, record_ids):
-    """Delete records — REST for small batches, Bulk API 2.0 for large."""
+    """Delete records — REST for small batches, Bulk API for large."""
     if len(record_ids) <= 200:
         for rid in record_ids:
             sf.__getattr__(sobject).delete(rid)
@@ -369,4 +369,4 @@ def _bulk_delete(sf, sobject, record_ids):
         delete_records = [{"Id": rid} for rid in record_ids]
         for i in range(0, len(delete_records), CHUNK):
             chunk = delete_records[i:i + CHUNK]
-            sf.bulk2.__getattr__(sobject).delete(chunk, batch_size=CHUNK)
+            sf.bulk.__getattr__(sobject).delete(chunk)
