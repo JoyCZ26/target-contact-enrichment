@@ -61,11 +61,13 @@ Sends this quarter's target contacts to Clay for enrichment.
 
 ---
 
-### Phase B: Preview (`--phase process --preview`)
+### Phase B: Process (`--phase process`)
 
-Runs all comparison logic and prints per-contact results **without writing anything to SFDC**. Use this to review before committing.
+Reads enrichment results from Salesforce, compares LinkedIn data against each contact's current account, and updates SFDC. Only runs on the current fiscal quarter's records.
 
-**Output shows:**
+**Use `--preview` to run the exact same logic without writing.** Preview does everything Process does — fetches records, runs all comparisons, prints per-contact results — but stops before making any changes. This is your chance to spot-check before committing.
+
+**Preview output shows:**
 - Scenario breakdown (counts per scenario)
 - Every contact listed under their scenario with:
   - Contact name and current SFDC account
@@ -73,13 +75,7 @@ Runs all comparison logic and prints per-contact results **without writing anyth
   - Whether a new account would be created (S3)
   - Whether the experience has an end date
 
-**Always run preview first.** This is your chance to spot-check the matching logic before it touches real data.
-
----
-
-### Phase B: Process (`--phase process`)
-
-Reads enrichment results from Salesforce and updates contacts based on what LinkedIn says. Only runs on the current fiscal quarter's records.
+**Always run `--preview` first, then run without it to apply.**
 
 **What it does, step by step:**
 
