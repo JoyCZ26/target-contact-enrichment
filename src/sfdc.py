@@ -352,11 +352,11 @@ def _bulk_update(sf, sobject, records):
 
 
 def _bulk_upsert(sf, sobject, external_id_field, records):
-    """Bulk API 2.0 upsert on an external ID field."""
+    """Bulk API upsert on an external ID field."""
     CHUNK = 10_000
     for i in range(0, len(records), CHUNK):
         chunk = records[i:i + CHUNK]
-        sf.bulk2.__getattr__(sobject).upsert(chunk, external_id_field, batch_size=CHUNK)
+        sf.bulk.__getattr__(sobject).upsert(chunk, external_id_field)
 
 
 def _bulk_delete(sf, sobject, record_ids):
