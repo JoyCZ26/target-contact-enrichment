@@ -356,9 +356,13 @@ def _bulk_upsert(sf, sobject, external_id_field, records):
 
 
 def _bulk_delete(sf, sobject, record_ids):
-    """Bulk API 2.0 delete."""
-    CHUNK = 10_000
-    delete_records = [{"Id": rid} for rid in record_ids]
-    for i in range(0, len(delete_records), CHUNK):
-        chunk = delete_records[i:i + CHUNK]
-        sf.bulk2.__getattr__(sobject).delete(chunk, batch_size=CHUNK)
+    """Delete records — REST for small batches, Bulk API 2.0 for large."""
+    if len(record_ids) <= 200:
+        for rid in record_ids:
+            sf.__getattr__(sobject).delete(rid)
+    else:
+        CHUNK = 10_000
+        delete_records = [{"Id": rid} for rid in record_ids]
+        for i in range(0, len(delete_records), CHUNK):
+            chunk = delete_records[i:i + CHUNK]
+            sf.bulk2.__getattr__(sobject).delete(chunk, batch_size=CHUNK)
