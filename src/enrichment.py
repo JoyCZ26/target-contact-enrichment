@@ -56,27 +56,23 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     ce_company = enrichment.get("CE_Company__c") or ""
     ce_title = enrichment.get("CE_Title__c") or ""
     ce_domain = enrichment.get("CE_Company_Domain__c") or ""
-    ce_is_current = enrichment.get("CE_Is_Current__c")
-    ce_end_date = enrichment.get("CE_End_Date__c")
 
     le_company = enrichment.get("LE_Company__c") or ""
     le_title = enrichment.get("LE_Title__c") or ""
     le_domain = enrichment.get("LE_Company_Domain__c") or ""
-    le_is_current = enrichment.get("LE_Is_Current__c")
-    le_end_date = enrichment.get("LE_End_Date__c")
 
-    # Use CE_ if it has company data, otherwise fall back to LE_
-    # is_current = True only if Is_Current is true AND no end date
+    # CE_ has data → person is currently at that company
+    # CE_ empty, LE_ has data → person left their last company
     if ce_company:
         li_company = ce_company
         li_title = ce_title
         li_domain = ce_domain
-        is_current = bool(ce_is_current) and not bool(ce_end_date)
+        is_current = True
     elif le_company:
         li_company = le_company
         li_title = le_title
         li_domain = le_domain
-        is_current = bool(le_is_current) and not bool(le_end_date)
+        is_current = False
     else:
         li_company = ""
         li_title = ""
