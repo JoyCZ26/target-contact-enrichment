@@ -106,7 +106,8 @@ def fetch_existing_enrichments(sf):
     print("Fetching existing Contact_Enrichment__c records...")
     records = query_all(
         sf,
-        "SELECT Id, Contact__c, Contact_Id__c FROM Contact_Enrichment__c"
+        "SELECT Id, Contact__c, Contact_Id__c, Processing_Status__c, "
+        "Enrichment_Quarter__c FROM Contact_Enrichment__c"
     )
     # Key by Contact ID for fast lookup
     by_contact = {}
@@ -117,6 +118,8 @@ def fetch_existing_enrichments(sf):
                 "Id": r["Id"],
                 "Contact__c": r.get("Contact__c"),
                 "Contact_Id__c": r.get("Contact_Id__c"),
+                "Processing_Status__c": r.get("Processing_Status__c"),
+                "Enrichment_Quarter__c": r.get("Enrichment_Quarter__c"),
             }
     print(f"  Found {len(by_contact)} existing enrichment records")
     return by_contact

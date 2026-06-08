@@ -75,9 +75,18 @@ def phase_push(dry_run=False, test_limit=None):
     returning_ids = target_set & existing_set
     dropped_ids = existing_set - target_set
 
+    # Split returning into already processed this quarter vs needs reset
+    already_done_ids = {
+        cid for cid in returning_ids
+        if existing[cid].get("Processing_Status__c") == "Processed"
+        and existing[cid].get("Enrichment_Quarter__c") == quarter
+    }
+    needs_reset_ids = returning_ids - already_done_ids
+
     print(f"\nEnrichment record reconciliation:")
     print(f"  New contacts (need enrichment record):     {len(new_ids)}")
-    print(f"  Returning contacts (already have record):  {len(returning_ids)}")
+    print(f"  Returning — already done this quarter:     {len(already_done_ids)}")
+    print(f"  Returning — needs reset:                   {len(needs_reset_ids)}")
     print(f"  Dropped contacts (record to delete):       {len(dropped_ids)}")
 
     # ── Step 3: Create new / delete stale enrichment records ────────────
@@ -88,8 +97,8 @@ def phase_push(dry_run=False, test_limit=None):
         enrichment_ids_to_delete = [existing[cid]["Id"] for cid in dropped_ids]
         delete_enrichment_records(sf, enrichment_ids_to_delete, dry_run=dry_run)
 
-    # ── Step 3b: Reset returning enrichment records for re-processing ──
-    if returning_ids:
+    # ── Step 3b: Reset returning enrichment records that need re-processing
+    if needs_reset_ids:
         reset_updates = [
             {
                 "Id": existing[cid]["Id"],
@@ -101,7 +110,7 @@ def phase_push(dry_run=False, test_limit=None):
                 "CE_End_Date__c": None,
                 "LinkedIn_Profile_URL__c": None,
             }
-            for cid in returning_ids
+            for cid in needs_reset_ids
         ]
         print(f"Resetting {len(reset_updates)} returning enrichment records...")
         from .sfdc import _bulk_update
@@ -114,12 +123,17 @@ def phase_push(dry_run=False, test_limit=None):
     enrichment_map = fetch_enrichment_ids_for_contacts(sf, contact_ids)
 
     # ── Step 5: Split by batch and push to Clay ─────────────────────────
+    # Skip contacts already processed this quarter
     batch_0 = []
     batch_1 = []
     missing_enrichment = 0
+    skipped_done = 0
 
     for contact in contacts:
         cid = contact["Id"]
+        if cid in already_done_ids:
+            skipped_done += 1
+            continue
         enrichment_id = enrichment_map.get(cid)
         if not enrichment_id:
             missing_enrichment += 1
@@ -129,6 +143,9 @@ def phase_push(dry_run=False, test_limit=None):
             batch_0.append(payload)
         else:
             batch_1.append(payload)
+
+    if skipped_done:
+        print(f"\n  Skipped {skipped_done} contacts already processed this quarter")
 
     if missing_enrichment:
         print(
