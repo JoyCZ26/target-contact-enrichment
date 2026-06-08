@@ -2,6 +2,35 @@
 
 Automates the quarterly process of enriching ~63K target contacts using LinkedIn data via Clay, then updating Salesforce based on whether each contact is still at the right company.
 
+## Target Contact Criteria
+
+A contact is included in the quarterly enrichment if it meets **both** conditions:
+
+**Contact has a target role** (any one of):
+- CFO Contact
+- CTO Contact
+- VP of Infrastructure Contact
+- Target Contact
+
+**AND the account qualifies** via one of two paths:
+
+**Path 1 — Account fits the profile** (all of these must be true):
+- Account matches at least one of:
+  - Target Account
+  - Ideal Customer Profile
+  - Ideal Customer Profile (FY27)
+  - Account Fit = High or Medium
+  - ABX Tier = Tier 1, 2, or 3
+  - Account Executive Owner is assigned (not blank)
+- **AND** Qualified Out Date is blank (not qualified out)
+
+**Path 2 — Account is active:**
+- Account Stage is Customer, Pipeline, or Churned Customer
+
+In short: target-role contacts at qualified accounts that aren't qualified out, plus all target-role contacts at Customer/Pipeline/Churned Customer accounts.
+
+---
+
 ## How It Works (Big Picture)
 
 Every quarter, we need to verify that our target contacts are still at the companies we have them listed under in Salesforce. This pipeline:
