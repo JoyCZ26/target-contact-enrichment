@@ -41,7 +41,8 @@ Sends this quarter's target contacts to Clay for enrichment.
 
 3. **Fetches this quarter's target contacts** using SOQL that mirrors the Target Contact Enrich List report. The criteria:
    - Contact is a CFO, CTO, VP of Infrastructure, or Target Contact
-   - AND their account is a Target Account, ICP, has High/Medium fit, is Tiered, or is a Customer/Pipeline/Churned Customer account
+   - AND their account qualifies: Target Account, ICP, ICP (FY27), High/Medium fit, Tiered (ABX Tier 1-3), or has an AE assigned — and is NOT qualified out
+   - OR their account is a Customer, Pipeline, or Churned Customer
 
 4. **Stamps `Quarterly_Enrich__c = true`** on all contacts in this quarter's batch.
 
