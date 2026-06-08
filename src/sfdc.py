@@ -186,8 +186,16 @@ def fetch_enrichment_ids_for_contacts(sf, contact_ids):
 
 # ── Step 5: Push to Clay ───────────────────────────────────────────────────
 
-def push_to_clay(contacts, webhook_url, dry_run=False):
-    """POST contacts to a Clay webhook — one row per request."""
+CLAY_RATE_DELAY = 0.1  # seconds between requests
+CLAY_MAX_RETRIES = 5
+CLAY_RETRY_BACKOFF = 10  # seconds to wait on 429
+
+
+def push_to_clay(contacts, webhook_url, sf=None, dry_run=False):
+    """POST contacts to a Clay webhook — one row per request with rate limiting.
+    If sf is provided, stamps enrichment records as sent after each successful POST."""
+    import time
+
     total = len(contacts)
     print(f"  Pushing {total} contacts to Clay webhook...")
 
@@ -196,19 +204,50 @@ def push_to_clay(contacts, webhook_url, dry_run=False):
         return
 
     errors = 0
+    sent = 0
     for i, contact in enumerate(contacts):
-        resp = requests.post(webhook_url, json=contact)
-        if not resp.ok:
+        # Rate limiting
+        if i > 0:
+            time.sleep(CLAY_RATE_DELAY)
+
+        # Retry on 429
+        success = False
+        for attempt in range(CLAY_MAX_RETRIES):
+            resp = requests.post(webhook_url, json=contact)
+            if resp.ok:
+                success = True
+                sent += 1
+                # Stamp enrichment record as sent
+                if sf and contact.get("EnrichmentRecordId"):
+                    try:
+                        sf.Contact_Enrichment__c.update(
+                            contact["EnrichmentRecordId"],
+                            {"Processing_Status__c": "Sent"}
+                        )
+                    except Exception:
+                        pass  # don't fail the push over a stamp error
+                break
+            elif resp.status_code == 429:
+                wait = CLAY_RETRY_BACKOFF * (attempt + 1)
+                print(f"  Rate limited at row {i + 1}, waiting {wait}s (attempt {attempt + 1}/{CLAY_MAX_RETRIES})...")
+                time.sleep(wait)
+            else:
+                errors += 1
+                print(
+                    f"  WARNING: Clay webhook returned {resp.status_code} "
+                    f"for row {i + 1}: {resp.text[:200]}",
+                    file=sys.stderr,
+                )
+                break
+
+        if not success and resp.status_code == 429:
             errors += 1
-            print(
-                f"  WARNING: Clay webhook returned {resp.status_code} "
-                f"for row {i + 1}: {resp.text[:200]}",
-                file=sys.stderr,
-            )
-        if (i + 1) % 100 == 0 or (i + 1) == total:
-            print(f"  Sent {i + 1}/{total} rows")
-    if errors:
-        print(f"  {errors}/{total} rows failed", file=sys.stderr)
+            print(f"  FAILED row {i + 1} after {CLAY_MAX_RETRIES} retries", file=sys.stderr)
+
+        if (i + 1) % 500 == 0 or (i + 1) == total:
+            print(f"  Progress: {i + 1}/{total} attempted, {sent} sent, {errors} failed")
+
+    print(f"  Done: {sent}/{total} sent, {errors} failed")
 
 
 # ── Phase B: Fetch enrichment results ───────────────────────────────────────

@@ -29,6 +29,11 @@
                 <default>false</default>
                 <label>URL Review</label>
             </value>
+            <value>
+                <fullName>Sent</fullName>
+                <default>false</default>
+                <label>Sent</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

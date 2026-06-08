@@ -78,7 +78,7 @@ def phase_push(dry_run=False, test_limit=None):
     # Split returning into already processed this quarter vs needs reset
     already_done_ids = {
         cid for cid in returning_ids
-        if existing[cid].get("Processing_Status__c") == "Processed"
+        if existing[cid].get("Processing_Status__c") in ("Processed", "Sent")
         and existing[cid].get("Enrichment_Quarter__c") == quarter
     }
     needs_reset_ids = returning_ids - already_done_ids
@@ -157,8 +157,8 @@ def phase_push(dry_run=False, test_limit=None):
     print(f"  Batch 0: {len(batch_0)} contacts → Webhook A")
     print(f"  Batch 1: {len(batch_1)} contacts → Webhook B")
 
-    push_to_clay(batch_0, CLAY_WEBHOOK_BATCH_0, dry_run=dry_run)
-    push_to_clay(batch_1, CLAY_WEBHOOK_BATCH_1, dry_run=dry_run)
+    push_to_clay(batch_0, CLAY_WEBHOOK_BATCH_0, sf=sf, dry_run=dry_run)
+    push_to_clay(batch_1, CLAY_WEBHOOK_BATCH_1, sf=sf, dry_run=dry_run)
 
     print("\n✓ Phase A complete — contacts pushed to Clay")
 
