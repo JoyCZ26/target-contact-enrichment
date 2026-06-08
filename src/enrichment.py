@@ -7,22 +7,26 @@ For each enriched contact, compares LinkedIn data against SFDC and determines:
   - Have they moved to a new company we need to create?
   - Is the data unusable?
 
+Uses CE_ (Current Experience) fields first. If empty, falls back to
+LE_ (Latest Experience) fields. Uses Is_Current to determine if the
+person is still at that company.
+
 Decision tree:
   Step 1: Does LinkedIn company match current SFDC Account? (domain, then name)
-    → Match + no end date:  Accurate, Person Has Moved = No
-    → Match + end date:     Accurate, Person Has Moved = Yes
+    → Match + is current:    Accurate, Person Has Moved = No
+    → Match + not current:   Accurate, Person Has Moved = Yes
 
   Step 2: No match → search all SFDC Accounts for LinkedIn company
-    → Found + no end date:  Reassign, Accurate, Person Has Moved = No
-    → Found + end date:     Reassign, Accurate, Person Has Moved = Yes
+    → Found + is current:    Reassign, Accurate, Person Has Moved = No
+    → Found + not current:   Reassign, Accurate, Person Has Moved = Yes
 
   Step 3: Not in SFDC → is it a real company?
-    → Viable + no end date: Create Account, reassign, Accurate, Person Has Moved = No
-    → Viable + end date:    Create Account, reassign, Accurate, Person Has Moved = Yes
-    → Not viable:           Accurate = false, Person Has Moved = Yes
+    → Viable + is current:   Create Account, reassign, Accurate, Person Has Moved = No
+    → Viable + not current:  Create Account, reassign, Accurate, Person Has Moved = Yes
+    → Not viable:            Accurate = false, Person Has Moved = Yes
 
-  Enrichment failed / no data:
-    → Person Has Moved = Maybe
+  No enrichment data at all:
+    → Accurate = true, Person Has Moved = Uncertain
 
 Always: backfill LinkedIn URL, LinkedIn Location, and Education on Contact if missing.
 """
@@ -48,19 +52,43 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     contact_updates = {}
     new_account_info = None
 
-    # ── Extract enrichment data ─────────────────────────────────────────
-    li_company = enrichment.get("CE_Company__c") or ""
-    li_title = enrichment.get("CE_Title__c") or ""
-    li_domain = enrichment.get("CE_Company_Domain__c") or ""
-    li_end_date = enrichment.get("CE_End_Date__c")  # None = current role
+    # ── Extract enrichment data (CE_ first, fall back to LE_) ──────────
+    ce_company = enrichment.get("CE_Company__c") or ""
+    ce_title = enrichment.get("CE_Title__c") or ""
+    ce_domain = enrichment.get("CE_Company_Domain__c") or ""
+    ce_is_current = enrichment.get("CE_Is_Current__c")
+    ce_end_date = enrichment.get("CE_End_Date__c")
+
+    le_company = enrichment.get("LE_Company__c") or ""
+    le_title = enrichment.get("LE_Title__c") or ""
+    le_domain = enrichment.get("LE_Company_Domain__c") or ""
+    le_is_current = enrichment.get("LE_Is_Current__c")
+    le_end_date = enrichment.get("LE_End_Date__c")
+
+    # Use CE_ if it has company data, otherwise fall back to LE_
+    # is_current = True only if Is_Current is true AND no end date
+    if ce_company:
+        li_company = ce_company
+        li_title = ce_title
+        li_domain = ce_domain
+        is_current = bool(ce_is_current) and not bool(ce_end_date)
+    elif le_company:
+        li_company = le_company
+        li_title = le_title
+        li_domain = le_domain
+        is_current = bool(le_is_current) and not bool(le_end_date)
+    else:
+        li_company = ""
+        li_title = ""
+        li_domain = ""
+        is_current = False
+
     li_url = enrichment.get("LinkedIn_Profile_URL__c") or ""
     li_education = enrichment.get("Education_JSON__c") or ""
     li_location = enrichment.get("Location_Name__c") or ""
     li_headline = enrichment.get("Headline__c") or ""
 
-    has_end_date = bool(li_end_date)
-
-    # Determine if enrichment data exists (no manual status field needed)
+    # Determine if enrichment data exists
     has_enrichment_data = bool(li_company or li_url or li_title)
 
     # Current SFDC data
@@ -112,10 +140,10 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
         contact_updates["Accurate__c"] = True
         _apply_title()
 
-        if has_end_date:
-            contact_updates["Person_Has_Moved__c"] = "Yes"
-        else:
+        if is_current:
             contact_updates["Person_Has_Moved__c"] = "No"
+        else:
+            contact_updates["Person_Has_Moved__c"] = "Yes"
 
         return 1, contact_updates, None, False
 
@@ -127,19 +155,17 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
     if matched_account:
         contact_updates["AccountId"] = matched_account["Id"]
         contact_updates["Accurate__c"] = True
-
         _apply_title()
 
-        if has_end_date:
-            contact_updates["Person_Has_Moved__c"] = "Yes"
-        else:
+        if is_current:
             contact_updates["Person_Has_Moved__c"] = "No"
+        else:
+            contact_updates["Person_Has_Moved__c"] = "Yes"
 
         return 2, contact_updates, None, False
 
     # ── Step 3: Not in SFDC — is it a viable company? ──────────────────
     if is_invalid_company(li_company, title=li_title, headline=li_headline):
-        # Not a real company — nothing to update for accuracy
         contact_updates["Person_Has_Moved__c"] = "Yes"
         contact_updates["Accurate__c"] = False
         return 4, contact_updates, None, False
@@ -150,13 +176,12 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
         "Website": li_domain if li_domain else None,
     }
 
-    contact_updates["Left_Company__c"] = True
     contact_updates["Accurate__c"] = True
     _apply_title()
 
-    if has_end_date:
-        contact_updates["Person_Has_Moved__c"] = "Yes"
-    else:
+    if is_current:
         contact_updates["Person_Has_Moved__c"] = "No"
+    else:
+        contact_updates["Person_Has_Moved__c"] = "Yes"
 
     return 3, contact_updates, new_account_info, False

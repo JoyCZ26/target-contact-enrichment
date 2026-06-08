@@ -215,6 +215,7 @@ ENRICHMENT_FIELDS = """
     CE_Company__c, CE_Title__c, CE_Company_Domain__c, CE_Is_Current__c,
     CE_Start_Date__c, CE_End_Date__c,
     LE_Company__c, LE_Title__c, LE_Company_Domain__c, LE_Is_Current__c,
+    LE_Start_Date__c, LE_End_Date__c,
     LinkedIn_Profile_URL__c, LinkedIn_Slug__c,
     Full_Name__c, First_Name__c, Last_Name__c,
     Headline__c, Location_Name__c, Country__c,
