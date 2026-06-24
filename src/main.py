@@ -66,7 +66,7 @@ def phase_push(dry_run=False, test_limit=None, resume=False):
     if test_limit:
         contacts = contacts[:test_limit]
     contact_ids = [c["Id"] for c in contacts]
-    if not test_limit and not resume:
+    if not test_limit:
         stamp_quarterly_enrich(sf, contact_ids, dry_run=dry_run)
 
     # ── Step 2: Compare with existing enrichment records ────────────────
