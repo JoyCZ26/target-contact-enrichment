@@ -47,7 +47,7 @@ def build_clay_payload(contact, enrichment_record_id):
 
 # ── Phase A ─────────────────────────────────────────────────────────────────
 
-def phase_push(dry_run=False, test_limit=None):
+def phase_push(dry_run=False, test_limit=None, resume=False):
     """Phase A: Read report, manage enrichment records, push to Clay."""
     sf = connect_salesforce()
     quarter = get_fiscal_quarter()
@@ -56,14 +56,17 @@ def phase_push(dry_run=False, test_limit=None):
     if test_limit:
         print(f"*** TEST MODE — limited to {test_limit} contacts ***\n")
 
+    if resume:
+        print("*** RESUME MODE — skipping clear/stamp/reconcile ***\n")
+
     # ── Step 1: Reset and re-stamp Quarterly_Enrich__c ──────────────────
-    if not test_limit:
+    if not test_limit and not resume:
         clear_quarterly_enrich(sf, dry_run=dry_run)
     contacts = fetch_target_contacts(sf)
     if test_limit:
         contacts = contacts[:test_limit]
     contact_ids = [c["Id"] for c in contacts]
-    if not test_limit:
+    if not test_limit and not resume:
         stamp_quarterly_enrich(sf, contact_ids, dry_run=dry_run)
 
     # ── Step 2: Compare with existing enrichment records ────────────────
@@ -71,59 +74,60 @@ def phase_push(dry_run=False, test_limit=None):
     target_set = set(contact_ids)
     existing_set = set(existing.keys())
 
-    new_ids = target_set - existing_set
-    returning_ids = target_set & existing_set
-    dropped_ids = existing_set - target_set
-
-    # Split returning into already processed this quarter vs needs reset
     already_done_ids = {
-        cid for cid in returning_ids
+        cid for cid in (target_set & existing_set)
         if existing[cid].get("Processing_Status__c") in ("Processed", "Sent")
         and existing[cid].get("Enrichment_Quarter__c") == quarter
     }
-    needs_reset_ids = returning_ids - already_done_ids
 
-    print(f"\nEnrichment record reconciliation:")
-    print(f"  New contacts (need enrichment record):     {len(new_ids)}")
-    print(f"  Returning — already done this quarter:     {len(already_done_ids)}")
-    print(f"  Returning — needs reset:                   {len(needs_reset_ids)}")
-    print(f"  Dropped contacts (record to delete):       {len(dropped_ids)}")
+    if not resume:
+        new_ids = target_set - existing_set
+        returning_ids = target_set & existing_set
+        dropped_ids = existing_set - target_set
+        needs_reset_ids = returning_ids - already_done_ids
 
-    # ── Step 3: Create new / delete stale enrichment records ────────────
-    if new_ids:
-        create_enrichment_records(sf, list(new_ids), quarter=quarter, dry_run=dry_run)
+        print(f"\nEnrichment record reconciliation:")
+        print(f"  New contacts (need enrichment record):     {len(new_ids)}")
+        print(f"  Returning — already done this quarter:     {len(already_done_ids)}")
+        print(f"  Returning — needs reset:                   {len(needs_reset_ids)}")
+        print(f"  Dropped contacts (record to delete):       {len(dropped_ids)}")
 
-    if dropped_ids:
-        enrichment_ids_to_delete = [existing[cid]["Id"] for cid in dropped_ids]
-        delete_enrichment_records(sf, enrichment_ids_to_delete, dry_run=dry_run)
+        # ── Step 3: Create new / delete stale enrichment records ────────
+        if new_ids:
+            create_enrichment_records(sf, list(new_ids), quarter=quarter, dry_run=dry_run)
 
-    # ── Step 3b: Reset returning enrichment records that need re-processing
-    if needs_reset_ids:
-        reset_updates = [
-            {
-                "Id": existing[cid]["Id"],
-                "Processing_Status__c": "Unprocessed",
-                "Enrichment_Quarter__c": quarter,
-                "CE_Company__c": None,
-                "CE_Title__c": None,
-                "CE_Company_Domain__c": None,
-                "CE_End_Date__c": None,
-                "LinkedIn_Profile_URL__c": None,
-            }
-            for cid in needs_reset_ids
-        ]
-        print(f"Resetting {len(reset_updates)} returning enrichment records...")
-        from .sfdc import _bulk_update
-        if not dry_run:
-            _bulk_update(sf, "Contact_Enrichment__c", reset_updates)
-        else:
-            print(f"  [DRY RUN] Would reset {len(reset_updates)} enrichment records")
+        if dropped_ids:
+            enrichment_ids_to_delete = [existing[cid]["Id"] for cid in dropped_ids]
+            delete_enrichment_records(sf, enrichment_ids_to_delete, dry_run=dry_run)
+
+        # ── Step 3b: Reset returning enrichment records ─────────────────
+        if needs_reset_ids:
+            reset_updates = [
+                {
+                    "Id": existing[cid]["Id"],
+                    "Processing_Status__c": "Unprocessed",
+                    "Enrichment_Quarter__c": quarter,
+                    "CE_Company__c": None,
+                    "CE_Title__c": None,
+                    "CE_Company_Domain__c": None,
+                    "CE_End_Date__c": None,
+                    "LinkedIn_Profile_URL__c": None,
+                }
+                for cid in needs_reset_ids
+            ]
+            print(f"Resetting {len(reset_updates)} returning enrichment records...")
+            from .sfdc import _bulk_update
+            if not dry_run:
+                _bulk_update(sf, "Contact_Enrichment__c", reset_updates)
+            else:
+                print(f"  [DRY RUN] Would reset {len(reset_updates)} enrichment records")
+    else:
+        print(f"  Already done (Sent/Processed) this quarter: {len(already_done_ids)}")
 
     # ── Step 4: Get enrichment Record IDs for all target contacts ───────
     enrichment_map = fetch_enrichment_ids_for_contacts(sf, contact_ids)
 
     # ── Step 5: Split by batch and push to Clay ─────────────────────────
-    # Skip contacts already processed this quarter
     batch_0 = []
     batch_1 = []
     missing_enrichment = 0
@@ -450,6 +454,12 @@ def main():
         default=False,
         help="Preview mode: run Phase B logic and show results without writing",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        default=False,
+        help="Resume push: skip clear/stamp/reconcile, go straight to Clay push",
+    )
     args = parser.parse_args()
 
     dry_run = args.dry_run or DRY_RUN
@@ -460,7 +470,7 @@ def main():
         print("=" * 60)
 
     if args.phase == "push":
-        phase_push(dry_run=dry_run, test_limit=args.test)
+        phase_push(dry_run=dry_run, test_limit=args.test, resume=args.resume)
     elif args.phase == "process":
         phase_process(dry_run=dry_run, preview=args.preview)
     elif args.phase == "metrics":
