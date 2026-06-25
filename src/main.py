@@ -1,9 +1,11 @@
 import argparse
+import csv
+import os
 import sys
 import time
 from collections import defaultdict
 
-from .config import CLAY_WEBHOOK_BATCH_0, CLAY_WEBHOOK_BATCH_1, DRY_RUN, get_fiscal_quarter
+from .config import DRY_RUN, get_fiscal_quarter
 from .sfdc import (
     connect_salesforce,
     clear_quarterly_enrich,
@@ -13,7 +15,6 @@ from .sfdc import (
     create_enrichment_records,
     delete_enrichment_records,
     fetch_enrichment_ids_for_contacts,
-    push_to_clay,
     fetch_unprocessed_enrichments,
     count_remaining_unprocessed,
     query_all,
@@ -127,7 +128,7 @@ def phase_push(dry_run=False, test_limit=None, resume=False):
     # ── Step 4: Get enrichment Record IDs for all target contacts ───────
     enrichment_map = fetch_enrichment_ids_for_contacts(sf, contact_ids)
 
-    # ── Step 5: Split by batch and push to Clay ─────────────────────────
+    # ── Step 5: Split by batch and generate CSVs ─────────────────────────
     batch_0 = []
     batch_1 = []
     missing_enrichment = 0
@@ -157,14 +158,69 @@ def phase_push(dry_run=False, test_limit=None, resume=False):
             file=sys.stderr,
         )
 
-    print(f"\nClay push:")
-    print(f"  Batch 0: {len(batch_0)} contacts → Webhook A")
-    print(f"  Batch 1: {len(batch_1)} contacts → Webhook B")
+    print(f"\nCSV generation:")
+    print(f"  Batch 0 (Table 1): {len(batch_0)} contacts")
+    print(f"  Batch 1 (Table 2): {len(batch_1)} contacts")
 
-    push_to_clay(batch_0, CLAY_WEBHOOK_BATCH_0, sf=sf, dry_run=dry_run)
-    push_to_clay(batch_1, CLAY_WEBHOOK_BATCH_1, sf=sf, dry_run=dry_run)
+    out_dir = os.environ.get("OUTPUT_DIR", "output")
+    os.makedirs(out_dir, exist_ok=True)
 
-    print("\n✓ Phase A complete — contacts pushed to Clay")
+    csv_fields = ["ContactId", "EnrichmentRecordId", "FirstName", "LastName",
+                   "Email", "Title", "LinkedInURL", "AccountName", "AccountId", "AccountWebsite"]
+
+    for label, rows, filename in [
+        ("Batch 0 (Table 1)", batch_0, "batch_0_table1.csv"),
+        ("Batch 1 (Table 2)", batch_1, "batch_1_table2.csv"),
+    ]:
+        path = os.path.join(out_dir, filename)
+        if dry_run:
+            print(f"  [DRY RUN] Would write {len(rows)} rows to {path}")
+        else:
+            with open(path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=csv_fields)
+                writer.writeheader()
+                writer.writerows(rows)
+            print(f"  Wrote {len(rows)} rows → {path}")
+
+    print(f"\n✓ Phase A complete — CSVs generated in {out_dir}/")
+    print(f"  Upload to Clay, then run: --phase stamp-sent")
+
+
+# ── Stamp Sent ─────────────────────────────────────────────────────────────
+
+def phase_stamp_sent(dry_run=False):
+    """Mark all Unprocessed enrichment records for the current quarter as Sent."""
+    sf = connect_salesforce()
+    quarter = get_fiscal_quarter()
+    print(f"\nFiscal quarter: {quarter}\n")
+
+    records = query_all(
+        sf,
+        f"SELECT Id FROM Contact_Enrichment__c "
+        f"WHERE Processing_Status__c = 'Unprocessed' "
+        f"AND Enrichment_Quarter__c = '{quarter}'"
+    )
+    count = len(records)
+    print(f"Found {count} Unprocessed enrichment records for {quarter}")
+
+    if count == 0:
+        print("Nothing to stamp.")
+        return
+
+    if sys.stdin.isatty():
+        response = input(f"\nMark {count} enrichment records as 'Sent'? (y/n): ")
+        if response.lower() != "y":
+            print("Skipped — records NOT stamped.")
+            return
+
+    if dry_run:
+        print(f"[DRY RUN] Would stamp {count} records as Sent")
+        return
+
+    from .sfdc import _bulk_update
+    updates = [{"Id": r["Id"], "Processing_Status__c": "Sent"} for r in records]
+    _bulk_update(sf, "Contact_Enrichment__c", updates)
+    print(f"✓ Stamped {count} enrichment records as 'Sent'")
 
 
 # ── Phase B ─────────────────────────────────────────────────────────────────
@@ -432,9 +488,9 @@ def main():
     parser = argparse.ArgumentParser(description="Quarterly Contact Enrichment")
     parser.add_argument(
         "--phase",
-        choices=["push", "process", "metrics"],
+        choices=["push", "process", "metrics", "stamp-sent"],
         required=True,
-        help="push = Phase A, process = Phase B, metrics = accuracy report only",
+        help="push = Phase A (CSVs), stamp-sent = mark as Sent, process = Phase B, metrics = accuracy report",
     )
     parser.add_argument(
         "--dry-run",
@@ -471,6 +527,8 @@ def main():
 
     if args.phase == "push":
         phase_push(dry_run=dry_run, test_limit=args.test, resume=args.resume)
+    elif args.phase == "stamp-sent":
+        phase_stamp_sent(dry_run=dry_run)
     elif args.phase == "process":
         phase_process(dry_run=dry_run, preview=args.preview)
     elif args.phase == "metrics":

@@ -11,6 +11,7 @@ on:
         type: choice
         options:
           - push
+          - stamp-sent
           - process
           - metrics
         default: push
@@ -27,12 +28,12 @@ on:
         type: boolean
         default: false
       resume:
-        description: "Resume push: skip clear/stamp/reconcile, go straight to Clay push"
+        description: "Resume push: skip clear/stamp/reconcile"
         type: boolean
         default: false
 
 jobs:
-  push-to-clay:
+  push-generate-csvs:
     if: >-
       github.event_name == 'schedule' ||
       inputs.phase == 'push'
@@ -47,19 +48,48 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Phase A — Push contacts to Clay
+      - name: Phase A — Generate CSVs for Clay
         env:
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
           SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
           SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
-          CLAY_WEBHOOK_BATCH_0: ${{ vars.CLAY_WEBHOOK_BATCH_0 }}
-          CLAY_WEBHOOK_BATCH_1: ${{ vars.CLAY_WEBHOOK_BATCH_1 }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           PYTHONUNBUFFERED: "1"
+          OUTPUT_DIR: output
         run: >-
           python -m src.main --phase push
           ${{ inputs.test_limit > 0 && format('--test {0}', inputs.test_limit) || '' }}
           ${{ inputs.resume && '--resume' || '' }}
+
+      - name: Upload CSVs as artifacts
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: clay-csvs
+          path: output/*.csv
+          retention-days: 30
+
+  stamp-sent:
+    if: inputs.phase == 'stamp-sent'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Stamp enrichment records as Sent
+        env:
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
+          SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          PYTHONUNBUFFERED: "1"
+        run: python -m src.main --phase stamp-sent
 
   process-results:
     if: inputs.phase == 'process'
@@ -104,4 +134,5 @@ jobs:
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
           SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
           SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
+          PYTHONUNBUFFERED: "1"
         run: python -m src.main --phase metrics

@@ -5,14 +5,9 @@ SF_CLIENT_ID = os.environ["SF_CLIENT_ID"]
 SF_CLIENT_SECRET = os.environ["SF_CLIENT_SECRET"]
 SF_LOGIN_URL = os.environ.get("SF_LOGIN_URL", "https://login.salesforce.com")
 
-# ── Clay ────────────────────────────────────────────────────────────────────
-CLAY_WEBHOOK_BATCH_0 = os.environ.get("CLAY_WEBHOOK_BATCH_0", "")
-CLAY_WEBHOOK_BATCH_1 = os.environ.get("CLAY_WEBHOOK_BATCH_1", "")
-
 # ── Runtime ─────────────────────────────────────────────────────────────────
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 SOQL_BATCH = 200          # max IDs per SOQL IN clause
-CLAY_POST_BATCH = 200     # rows per webhook POST to Clay
 
 
 # ── Fiscal quarter ─────────────────────────────────────────────────────────
