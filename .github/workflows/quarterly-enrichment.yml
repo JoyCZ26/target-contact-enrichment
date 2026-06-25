@@ -94,7 +94,6 @@ jobs:
   process-results:
     if: inputs.phase == 'process'
     runs-on: ubuntu-latest
-    timeout-minutes: 4320  # 3 days — polls until Clay finishes
     steps:
       - uses: actions/checkout@v4
 

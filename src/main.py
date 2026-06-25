@@ -2,7 +2,6 @@ import argparse
 import csv
 import os
 import sys
-import time
 from collections import defaultdict
 
 from .config import DRY_RUN, get_fiscal_quarter
@@ -225,9 +224,6 @@ def phase_stamp_sent(dry_run=False):
 
 # ── Phase B ─────────────────────────────────────────────────────────────────
 
-POLL_INTERVAL = 600  # seconds between checks (10 minutes)
-
-
 SCENARIO_LABELS = {
     1: "S1 — Still at same company",
     2: "S2 — Moved to existing account",
@@ -394,16 +390,10 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
     return len(processed_ids), remaining
 
 
-MAX_STALE_CHECKS = 6  # 6 consecutive empty checks × 10 min = 1 hour
-
-
 def phase_process(dry_run=False, preview=False):
-    """Phase B: Poll and process enrichment results until Clay is done.
+    """Phase B: Process all unprocessed enrichment results for the current quarter.
 
-    If preview=True, runs logic once and prints results without writing.
-    Otherwise polls every 10 minutes until Clay is done.
-
-    Only processes records for the current fiscal quarter.
+    If preview=True, runs logic and prints results without writing.
     """
     sf = connect_salesforce()
     quarter = get_fiscal_quarter()
@@ -413,72 +403,15 @@ def phase_process(dry_run=False, preview=False):
         print("=" * 60)
         print("  PREVIEW MODE — analyzing only, no changes will be made")
         print("=" * 60)
-        _process_batch(sf, quarter, dry_run=True, preview=True)
+
+    processed, remaining = _process_batch(sf, quarter, dry_run=dry_run, preview=preview)
+
+    if preview:
         return
 
-    total_processed = 0
-    stale_count = 0
-    iteration = 0
-
-    while True:
-        iteration += 1
-        print(f"\n{'='*60}")
-        print(f"  Processing iteration {iteration} ({quarter})")
-        print(f"{'='*60}")
-
-        processed, remaining = _process_batch(sf, quarter, dry_run=dry_run)
-        total_processed += processed
-
-        print(f"\n  Total processed so far: {total_processed}")
-        print(f"  Remaining (no data):    {remaining}")
-
-        # All done — nothing left
-        if remaining == 0:
-            print(f"\n✓ All {quarter} enrichment records processed")
-            break
-
-        # New records were processed — reset stale counter
-        if processed > 0:
-            stale_count = 0
-        else:
-            stale_count += 1
-            print(f"  No new records this check ({stale_count}/{MAX_STALE_CHECKS})")
-
-        # Clay appears done — no new records for 1 hour
-        if stale_count >= MAX_STALE_CHECKS:
-            print(f"\n  No new records for {MAX_STALE_CHECKS * POLL_INTERVAL // 60} minutes — Clay is done")
-            print(f"  Marking {remaining} remaining records as Uncertain...")
-
-            # Fetch remaining blank records for this quarter
-            remaining_records = query_all(
-                sf,
-                f"SELECT Id, Contact__c FROM Contact_Enrichment__c "
-                f"WHERE Processing_Status__c = 'Unprocessed' "
-                f"AND Enrichment_Quarter__c = '{quarter}' "
-                f"AND CE_Company__c = null AND CE_Title__c = null "
-                f"AND LinkedIn_Profile_URL__c = null"
-            )
-
-            # Update contacts
-            contact_updates = [
-                {"Id": r["Contact__c"], "Person_Has_Moved__c": "Uncertain", "Accurate__c": True}
-                for r in remaining_records if r.get("Contact__c")
-            ]
-            if contact_updates:
-                bulk_update_contacts(sf, contact_updates, dry_run=dry_run)
-
-            # Mark enrichment records as Processed
-            remaining_ids = [r["Id"] for r in remaining_records]
-            mark_enrichments_processed(sf, remaining_ids, status="Processed", dry_run=dry_run)
-
-            total_processed += len(remaining_ids)
-            break
-
-        print(f"  Waiting {POLL_INTERVAL // 60} minutes before next check...")
-        time.sleep(POLL_INTERVAL)
-
-    # ── Final summary + metrics ────────────────────────────────────────
-    print(f"\n✓ Phase B complete ({quarter}) — {total_processed} total enrichments processed")
+    print(f"\n✓ Phase B complete ({quarter}) — {processed} enrichments processed")
+    if remaining > 0:
+        print(f"  {remaining} records still unprocessed")
     run_metrics()
 
 
