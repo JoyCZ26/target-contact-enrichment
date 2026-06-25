@@ -188,9 +188,9 @@ def fetch_enrichment_ids_for_contacts(sf, contact_ids):
 
 ENRICHMENT_FIELDS = """
     Id, Contact__c, Contact_Id__c,
-    CE_Company__c, CE_Title__c, CE_Company_Domain__c, CE_Is_Current__c,
+    CE_Company__c, CE_Title__c, CE_Company_Domain__c, CE_Company_URL__c, CE_Is_Current__c,
     CE_Start_Date__c, CE_End_Date__c,
-    LE_Company__c, LE_Title__c, LE_Company_Domain__c, LE_Is_Current__c,
+    LE_Company__c, LE_Title__c, LE_Company_Domain__c, LE_Company_URL__c, LE_Is_Current__c,
     LE_Start_Date__c, LE_End_Date__c,
     LinkedIn_Profile_URL__c, LinkedIn_Slug__c,
     Full_Name__c, First_Name__c, Last_Name__c,
@@ -203,6 +203,7 @@ ENRICHMENT_FIELDS = """
 CONTACT_PROCESS_FIELDS = """
     Id, FirstName, LastName, Title, Email, AccountId,
     Account.Name, Account.Website, Account.Id,
+    Account.Company_LinkedIn_URL__c, Account.KN_LinkedIn_URL__c,
     LinkedIn_URL__c, LinkedIn_Location__c, Accurate__c, Person_Has_Moved__c,
     Left_Company__c, Education__c, LinkedIn_Title__c
 """.strip()
@@ -254,7 +255,7 @@ def fetch_all_accounts(sf):
     print("Building account lookup maps...")
     records = query_all(
         sf,
-        "SELECT Id, Name, Website FROM Account"
+        "SELECT Id, Name, Website, Company_LinkedIn_URL__c, KN_LinkedIn_URL__c FROM Account"
     )
     print(f"  Loaded {len(records)} accounts")
     return [_strip_attributes(r) for r in records]

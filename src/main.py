@@ -253,7 +253,23 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
 
     # ── Build account lookup maps ──────────────────────────────────────
     accounts = fetch_all_accounts(sf)
-    domain_map, name_map = build_account_maps(accounts)
+    domain_map, name_map, linkedin_slug_map = build_account_maps(accounts)
+
+    # ── Pre-resolve redirects for unique LinkedIn domains ────────────
+    from .matching import resolve_domain_redirect
+    unique_domains = set()
+    for e in enrichments:
+        for field in ("CE_Company_Domain__c", "LE_Company_Domain__c"):
+            d = extract_domain(e.get(field) or "")
+            if d and d not in domain_map:
+                unique_domains.add(d)
+    if unique_domains:
+        print(f"  Resolving redirects for {len(unique_domains)} unmatched domains...")
+        for i, d in enumerate(sorted(unique_domains), 1):
+            if i % 200 == 0:
+                print(f"    ...{i}/{len(unique_domains)}")
+            resolve_domain_redirect(d, log=True)
+        print(f"  Redirect resolution complete")
 
     # ── Process each enrichment → resolve scenario ─────────────────────
     contact_updates = {}
@@ -276,7 +292,7 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
 
         try:
             scenario, updates, new_account, needs_url_review = process_enrichment(
-                enrichment, contact, domain_map, name_map
+                enrichment, contact, domain_map, name_map, linkedin_slug_map
             )
         except Exception as e:
             print(f"  ERROR processing {contact_id}: {e}", file=sys.stderr)
@@ -319,10 +335,15 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
         processed_ids.append(enrichment["Id"])
 
     # ── Print scenario breakdown ──────────────────────────────────────
+    s3_with_account = sum(1 for d in scenario_details.get(3, []) if d.get("new_account"))
+    s3_no_domain = scenario_counts[3] - s3_with_account
+
     print(f"\n  Scenario breakdown:")
     print(f"    S1 — Still at same company:     {scenario_counts[1]}")
     print(f"    S2 — Moved to existing account: {scenario_counts[2]}")
     print(f"    S3 — Moved to new company:      {scenario_counts[3]}")
+    print(f"         ├─ with domain (new acct): {s3_with_account}")
+    print(f"         └─ no domain (moved only): {s3_no_domain}")
     print(f"    S4 — No data / uncertain:       {scenario_counts[4]}")
     print(f"    Errors:                          {len(error_ids)}")
 

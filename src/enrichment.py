@@ -35,11 +35,12 @@ from .matching import (
     match_company_to_current_account,
     lookup_company_in_sfdc,
     is_invalid_company,
+    is_domain_dead,
     extract_domain,
 )
 
 
-def process_enrichment(enrichment, contact, domain_map, name_map):
+def process_enrichment(enrichment, contact, domain_map, name_map, linkedin_slug_map=None):
     """Process a single enrichment record against its contact.
 
     Returns:
@@ -63,20 +64,26 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
 
     # CE_ has data → person is currently at that company
     # CE_ empty, LE_ has data → person left their last company
+    ce_company_url = enrichment.get("CE_Company_URL__c") or ""
+    le_company_url = enrichment.get("LE_Company_URL__c") or ""
+
     if ce_company:
         li_company = ce_company
         li_title = ce_title
         li_domain = ce_domain
+        li_company_url = ce_company_url
         is_current = True
     elif le_company:
         li_company = le_company
         li_title = le_title
         li_domain = le_domain
+        li_company_url = le_company_url
         is_current = False
     else:
         li_company = ""
         li_title = ""
         li_domain = ""
+        li_company_url = ""
         is_current = False
 
     li_url = enrichment.get("LinkedIn_Profile_URL__c") or ""
@@ -128,8 +135,16 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
             contact_updates["LinkedIn_Title__c"] = li_title
 
     # ── Step 1: Does LinkedIn company match current SFDC Account? ───────
+    sfdc_account_linkedin_urls = [
+        u for u in (
+            account.get("Company_LinkedIn_URL__c") or "",
+            account.get("KN_LinkedIn_URL__c") or "",
+        ) if u
+    ]
     is_same = match_company_to_current_account(
-        li_domain, li_company, sfdc_account_domain, sfdc_account_name
+        li_domain, li_company, sfdc_account_domain, sfdc_account_name,
+        linkedin_company_url=li_company_url,
+        sfdc_account_linkedin_urls=sfdc_account_linkedin_urls,
     )
 
     if is_same:
@@ -145,7 +160,9 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
 
     # ── Step 2: Search all SFDC Accounts for the LinkedIn company ───────
     matched_account = lookup_company_in_sfdc(
-        li_domain, li_company, domain_map, name_map
+        li_domain, li_company, domain_map, name_map,
+        linkedin_company_url=li_company_url,
+        linkedin_slug_map=linkedin_slug_map,
     )
 
     if matched_account:
@@ -161,15 +178,22 @@ def process_enrichment(enrichment, contact, domain_map, name_map):
         return 2, contact_updates, None, False
 
     # ── Step 3: Not in SFDC — is it a viable company? ──────────────────
-    if is_invalid_company(li_company, title=li_title, headline=li_headline):
+    if is_invalid_company(li_company, title=li_title, headline=li_headline) or is_domain_dead(li_domain):
         contact_updates["Person_Has_Moved__c"] = "Yes"
         contact_updates["Accurate__c"] = False
         return 4, contact_updates, None, False
 
-    # Viable company — create new Account
+    # Viable company — but can't create Account without a website
+    if not li_domain:
+        contact_updates["Accurate__c"] = True
+        contact_updates["Person_Has_Moved__c"] = "Yes"
+        contact_updates["Left_Company__c"] = True
+        _apply_title()
+        return 3, contact_updates, None, False
+
     new_account_info = {
         "Name": li_company,
-        "Website": li_domain if li_domain else None,
+        "Website": li_domain,
     }
 
     contact_updates["Accurate__c"] = True
