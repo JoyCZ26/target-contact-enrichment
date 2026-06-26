@@ -13,6 +13,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>Contact_Enrichment__c.Record_Created_Date__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Contact_Enrichment__c.CE_Company_Domain__c</field>
         <readable>true</readable>
     </fieldPermissions>
