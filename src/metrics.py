@@ -9,9 +9,12 @@ Measures target contact accuracy across account segments:
   - Customer Accounts
 """
 
+import os
 import sys
 from collections import defaultdict
+from datetime import date
 
+from .config import get_fiscal_quarter
 from .sfdc import connect_salesforce, query_all
 
 
@@ -222,11 +225,113 @@ def print_metrics(results):
     print("=" * len(line))
 
 
+# ── HTML report ───────────────────────────────────────────────────────────
+
+def write_html_report(results, quarter, out_path="reports/metrics.html"):
+    """Write an HTML metrics report, appending each quarter's results."""
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    fy_year = quarter.split("-")[0]
+    q_label = quarter.split("-")[1]
+    run_date = date.today().strftime("%B %d, %Y")
+
+    # Build this quarter's table HTML
+    segment_headers = "".join(
+        f"<th>{r['name'].replace(chr(10), '<br>')}</th>" for r in results
+    )
+
+    def metric_row(label, key, fmt="count"):
+        cells = ""
+        for r in results:
+            if fmt == "count":
+                cells += f"<td>{r[key]:,}</td>"
+            elif fmt == "pct_count":
+                pct_key = key.replace("_contacts", "_pct").replace("accounts_", "pct_accounts_")
+                if "90" in key:
+                    pct_key = "pct_accounts_90pct"
+                cells += f"<td>{r[pct_key]:.0f}% ({r[key]:,})</td>"
+        return f"<tr><td class='label'>{label}</td>{cells}</tr>"
+
+    table_html = f"""
+    <div class="quarter-section">
+      <h2>FY{fy_year} {q_label} — Quarterly Contact Enrichment</h2>
+      <p class="run-date">Run date: {run_date}</p>
+      <table>
+        <thead>
+          <tr><th class="label"></th>{segment_headers}</tr>
+        </thead>
+        <tbody>
+          {metric_row("# of Target Contacts", "target_contacts", "count")}
+          {metric_row("% Target Contact Accuracy", "accurate_contacts", "pct_count")}
+          {metric_row("# of Accounts", "total_accounts", "count")}
+          {metric_row("% Accounts with Target Contacts", "accounts_with_tc", "pct_count")}
+          {metric_row("% Accounts w/ &ge; 90% TC Accuracy", "accounts_90pct", "pct_count")}
+        </tbody>
+      </table>
+    </div>
+"""
+
+    # Check if file exists and has previous quarters
+    if os.path.exists(out_path):
+        with open(out_path, "r") as f:
+            existing = f.read()
+        if f"FY{fy_year} {q_label}" in existing:
+            # Replace existing quarter section
+            import re
+            pattern = rf'<div class="quarter-section">\s*<h2>FY{fy_year} {q_label}.*?</div>'
+            existing = re.sub(pattern, table_html.strip(), existing, flags=re.DOTALL)
+            with open(out_path, "w") as f:
+                f.write(existing)
+            print(f"  Updated {quarter} in {out_path}")
+            return
+        # Insert new quarter after <body>
+        existing = existing.replace(
+            "<!-- QUARTER_SECTIONS -->",
+            f"<!-- QUARTER_SECTIONS -->\n{table_html}",
+        )
+        with open(out_path, "w") as f:
+            f.write(existing)
+        print(f"  Added {quarter} to {out_path}")
+        return
+
+    # Create new file
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Contact Enrichment Metrics — CloudZero</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px auto; max-width: 1100px; color: #1a1a1a; background: #f8f9fa; }}
+  h1 {{ color: #0f172a; border-bottom: 3px solid #3b82f6; padding-bottom: 12px; }}
+  h2 {{ color: #1e40af; margin-top: 40px; }}
+  .run-date {{ color: #64748b; font-size: 14px; margin-top: -8px; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 16px 0 32px; }}
+  th, td {{ padding: 10px 16px; text-align: right; border: 1px solid #e2e8f0; }}
+  th {{ background: #1e40af; color: white; font-weight: 600; }}
+  td.label, th.label {{ text-align: left; background: #f1f5f9; color: #1a1a1a; font-weight: 600; min-width: 260px; }}
+  tbody tr:nth-child(even) {{ background: #f8fafc; }}
+  tbody tr:hover {{ background: #eff6ff; }}
+</style>
+</head>
+<body>
+<h1>Contact Enrichment Metrics</h1>
+<!-- QUARTER_SECTIONS -->
+{table_html}
+</body>
+</html>"""
+
+    with open(out_path, "w") as f:
+        f.write(html)
+    print(f"  Created {out_path}")
+
+
 # ── Entry point ────────────────────────────────────────────────────────────
 
 def run_metrics():
-    """Connect to SFDC, compute metrics, and print."""
+    """Connect to SFDC, compute metrics, print, and write HTML report."""
     sf = connect_salesforce()
+    quarter = get_fiscal_quarter()
     results = compute_metrics(sf)
     print_metrics(results)
+    write_html_report(results, quarter)
     return results
