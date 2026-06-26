@@ -240,16 +240,14 @@ def write_html_report(results, quarter, out_path="reports/metrics.html"):
         f"<th>{r['name'].replace(chr(10), '<br>')}</th>" for r in results
     )
 
-    def metric_row(label, key, fmt="count"):
-        cells = ""
-        for r in results:
-            if fmt == "count":
-                cells += f"<td>{r[key]:,}</td>"
-            elif fmt == "pct_count":
-                pct_key = key.replace("_contacts", "_pct").replace("accounts_", "pct_accounts_")
-                if "90" in key:
-                    pct_key = "pct_accounts_90pct"
-                cells += f"<td>{r[pct_key]:.0f}% ({r[key]:,})</td>"
+    def count_row(label, key):
+        cells = "".join(f"<td>{r[key]:,}</td>" for r in results)
+        return f"<tr><td class='label'>{label}</td>{cells}</tr>"
+
+    def pct_row(label, count_key, pct_key):
+        cells = "".join(
+            f"<td>{r[pct_key]:.0f}% ({r[count_key]:,})</td>" for r in results
+        )
         return f"<tr><td class='label'>{label}</td>{cells}</tr>"
 
     table_html = f"""
@@ -261,11 +259,11 @@ def write_html_report(results, quarter, out_path="reports/metrics.html"):
           <tr><th class="label"></th>{segment_headers}</tr>
         </thead>
         <tbody>
-          {metric_row("# of Target Contacts", "target_contacts", "count")}
-          {metric_row("% Target Contact Accuracy", "accurate_contacts", "pct_count")}
-          {metric_row("# of Accounts", "total_accounts", "count")}
-          {metric_row("% Accounts with Target Contacts", "accounts_with_tc", "pct_count")}
-          {metric_row("% Accounts w/ &ge; 90% TC Accuracy", "accounts_90pct", "pct_count")}
+          {count_row("# of Target Contacts", "target_contacts")}
+          {pct_row("% Target Contact Accuracy", "accurate_contacts", "accuracy_pct")}
+          {count_row("# of Accounts", "total_accounts")}
+          {pct_row("% Accounts with Target Contacts", "accounts_with_tc", "pct_accounts_with_tc")}
+          {pct_row("% Accounts w/ &ge; 90% TC Accuracy", "accounts_90pct", "pct_accounts_90pct")}
         </tbody>
       </table>
     </div>
