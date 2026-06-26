@@ -144,9 +144,9 @@ def match_company_to_current_account(linkedin_domain, linkedin_company,
 
     Four exact-match signals (any one = match):
       1. Website domain match
-      2. Redirect-resolved domain match
-      3. Exact normalized name match
-      4. LinkedIn company URL slug match
+      2. Exact normalized name match
+      3. LinkedIn company URL slug match
+      4. Redirect-resolved domain match (lazy — only if cheaper signals fail)
 
     Returns True if it's the same company, False otherwise.
     """
@@ -157,7 +157,22 @@ def match_company_to_current_account(linkedin_domain, linkedin_company,
     if li_domain and sfdc_domain and li_domain == sfdc_domain:
         return True
 
-    # Signal 2: Redirect-resolved domain match
+    # Signal 2: Exact normalized name match
+    li_norm = normalize_company_name(linkedin_company)
+    sfdc_norm = normalize_company_name(sfdc_account_name)
+
+    if li_norm and sfdc_norm and li_norm == sfdc_norm:
+        return True
+
+    # Signal 3: LinkedIn company URL slug match
+    if linkedin_company_url and sfdc_account_linkedin_urls:
+        li_slug = extract_linkedin_slug(linkedin_company_url)
+        if li_slug:
+            for sfdc_li_url in sfdc_account_linkedin_urls:
+                if extract_linkedin_slug(sfdc_li_url) == li_slug:
+                    return True
+
+    # Signal 4: Redirect-resolved domain match (last — requires HTTP)
     if li_domain and sfdc_domain and li_domain != sfdc_domain:
         resolved_li = resolve_domain_redirect(li_domain)
         if resolved_li == sfdc_domain:
@@ -165,21 +180,6 @@ def match_company_to_current_account(linkedin_domain, linkedin_company,
         resolved_sfdc = resolve_domain_redirect(sfdc_domain)
         if li_domain == resolved_sfdc or resolved_li == resolved_sfdc:
             return True
-
-    # Signal 3: Exact normalized name match
-    li_norm = normalize_company_name(linkedin_company)
-    sfdc_norm = normalize_company_name(sfdc_account_name)
-
-    if li_norm and sfdc_norm and li_norm == sfdc_norm:
-        return True
-
-    # Signal 4: LinkedIn company URL slug match
-    if linkedin_company_url and sfdc_account_linkedin_urls:
-        li_slug = extract_linkedin_slug(linkedin_company_url)
-        if li_slug:
-            for sfdc_li_url in sfdc_account_linkedin_urls:
-                if extract_linkedin_slug(sfdc_li_url) == li_slug:
-                    return True
 
     return False
 

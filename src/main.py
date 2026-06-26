@@ -255,22 +255,6 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
     accounts = fetch_all_accounts(sf)
     domain_map, name_map, linkedin_slug_map = build_account_maps(accounts)
 
-    # ── Pre-resolve redirects for unique LinkedIn domains ────────────
-    from .matching import resolve_domain_redirect
-    unique_domains = set()
-    for e in enrichments:
-        for field in ("CE_Company_Domain__c", "LE_Company_Domain__c"):
-            d = extract_domain(e.get(field) or "")
-            if d and d not in domain_map:
-                unique_domains.add(d)
-    if unique_domains:
-        print(f"  Resolving redirects for {len(unique_domains)} unmatched domains...")
-        for i, d in enumerate(sorted(unique_domains), 1):
-            if i % 200 == 0:
-                print(f"    ...{i}/{len(unique_domains)}")
-            resolve_domain_redirect(d, log=True)
-        print(f"  Redirect resolution complete")
-
     # ── Process each enrichment → resolve scenario ─────────────────────
     contact_updates = {}
     new_accounts_needed = {}
