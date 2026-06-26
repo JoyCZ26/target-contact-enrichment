@@ -180,7 +180,7 @@ def process_enrichment(enrichment, contact, domain_map, name_map, linkedin_slug_
     # ── Step 3: Not in SFDC — is it a viable company? ──────────────────
     if is_invalid_company(li_company, title=li_title, headline=li_headline) or is_domain_dead(li_domain):
         contact_updates["Person_Has_Moved__c"] = "Yes"
-        contact_updates["Accurate__c"] = False
+        contact_updates["Accurate__c"] = True
         return 4, contact_updates, None, False
 
     # Viable company — but can't create Account without a website
