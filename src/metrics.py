@@ -29,7 +29,7 @@ WHERE Quarterly_Enrich__c = true
 METRICS_ACCOUNT_SOQL = """
 SELECT Id, Name, Target_Account__c,
        Ideal_Customer_Profile__c, ABX_Tier__c,
-       Account_Stage__c
+       Account_Stage__c, Account_Executive_Owner__c
 FROM Account
 """.strip()
 
@@ -40,7 +40,7 @@ SEGMENTS = [
     {
         "name": "All Owned Accounts\n(Excl. Customers)",
         "short": "all_owned",
-        "account_filter": lambda a: (a.get("Account_Stage__c") or "") != "Customer",
+        "account_filter": lambda a: (a.get("Account_Stage__c") or "") != "Customer" and a.get("Account_Executive_Owner__c"),
     },
     {
         "name": "Target Accounts",
@@ -93,6 +93,7 @@ def compute_metrics(sf):
             "Ideal_Customer_Profile__c": a.get("Ideal_Customer_Profile__c"),
             "ABX_Tier__c": a.get("ABX_Tier__c"),
             "Account_Stage__c": a.get("Account_Stage__c"),
+            "Account_Executive_Owner__c": a.get("Account_Executive_Owner__c"),
         }
 
     # Group contacts by account
