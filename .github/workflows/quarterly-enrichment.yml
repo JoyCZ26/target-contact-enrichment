@@ -118,6 +118,8 @@ jobs:
   metrics:
     if: inputs.phase == 'metrics'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -137,9 +139,14 @@ jobs:
         run: python -m src.main --phase metrics
 
       - name: Commit metrics report
+        env:
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
+          SF_LOGIN_URL: ${{ secrets.SF_LOGIN_URL }}
         run: |
+          QUARTER=$(python -c "from src.config import get_fiscal_quarter; print(get_fiscal_quarter())")
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add reports/metrics.html
-          git diff --cached --quiet || git commit -m "Update metrics report — $(python -c 'from src.config import get_fiscal_quarter; print(get_fiscal_quarter())')"
+          git diff --cached --quiet || git commit -m "Update metrics report — $QUARTER"
           git push
