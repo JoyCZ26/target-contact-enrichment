@@ -1,9 +1,6 @@
 name: Quarterly Contact Enrichment
 
 on:
-  schedule:
-    # First Monday of Feb, May, Aug, Nov at 1pm UTC (8am ET) — fiscal quarters
-    - cron: "0 13 1-7 2,5,8,11 1"
   workflow_dispatch:
     inputs:
       phase:
@@ -34,9 +31,7 @@ on:
 
 jobs:
   push-generate-csvs:
-    if: >-
-      github.event_name == 'schedule' ||
-      inputs.phase == 'push'
+    if: inputs.phase == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

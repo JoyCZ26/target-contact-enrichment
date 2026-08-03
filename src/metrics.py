@@ -31,7 +31,7 @@ WHERE Quarterly_Enrich__c = true
 
 METRICS_ACCOUNT_SOQL = """
 SELECT Id, Name, Target_Account__c,
-       Ideal_Customer_Profile__c, Ideal_Customer_Profile_FY27__c,
+       Ideal_Customer_Profile__c,
        ABX_Tier__c, Account_Stage__c, Account_Executive_Owner__c
 FROM Account
 """.strip()
@@ -51,9 +51,9 @@ SEGMENTS = [
         "account_filter": lambda a: a.get("Target_Account__c") is True,
     },
     {
-        "name": "ICPs (FY27)",
-        "short": "icps_fy27",
-        "account_filter": lambda a: a.get("Ideal_Customer_Profile_FY27__c") is True,
+        "name": "ICPs",
+        "short": "icps",
+        "account_filter": lambda a: a.get("Ideal_Customer_Profile__c") is True,
     },
     {
         "name": "Tiered Accounts",
@@ -94,7 +94,6 @@ def compute_metrics(sf):
             "Name": a.get("Name") or "",
             "Target_Account__c": a.get("Target_Account__c"),
             "Ideal_Customer_Profile__c": a.get("Ideal_Customer_Profile__c"),
-            "Ideal_Customer_Profile_FY27__c": a.get("Ideal_Customer_Profile_FY27__c"),
             "ABX_Tier__c": a.get("ABX_Tier__c"),
             "Account_Stage__c": a.get("Account_Stage__c"),
             "Account_Executive_Owner__c": a.get("Account_Executive_Owner__c"),
