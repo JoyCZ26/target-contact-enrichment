@@ -40,7 +40,7 @@ from .matching import (
 )
 
 
-def process_enrichment(enrichment, contact, domain_map, name_map, linkedin_slug_map=None):
+def process_enrichment(enrichment, contact, domain_map, name_map, linkedin_slug_map=None, skip_redirects=False):
     """Process a single enrichment record against its contact.
 
     Returns:
@@ -145,6 +145,7 @@ def process_enrichment(enrichment, contact, domain_map, name_map, linkedin_slug_
         li_domain, li_company, sfdc_account_domain, sfdc_account_name,
         linkedin_company_url=li_company_url,
         sfdc_account_linkedin_urls=sfdc_account_linkedin_urls,
+        skip_redirects=skip_redirects,
     )
 
     if is_same:
@@ -163,6 +164,7 @@ def process_enrichment(enrichment, contact, domain_map, name_map, linkedin_slug_
         li_domain, li_company, domain_map, name_map,
         linkedin_company_url=li_company_url,
         linkedin_slug_map=linkedin_slug_map,
+        skip_redirects=skip_redirects,
     )
 
     if matched_account:
@@ -178,7 +180,7 @@ def process_enrichment(enrichment, contact, domain_map, name_map, linkedin_slug_
         return 2, contact_updates, None, False
 
     # ── Step 3: Not in SFDC — is it a viable company? ──────────────────
-    if is_invalid_company(li_company, title=li_title, headline=li_headline) or is_domain_dead(li_domain):
+    if is_invalid_company(li_company, title=li_title, headline=li_headline) or (not skip_redirects and is_domain_dead(li_domain)):
         contact_updates["Person_Has_Moved__c"] = "Yes"
         contact_updates["Accurate__c"] = True
         return 4, contact_updates, None, False

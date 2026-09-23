@@ -139,7 +139,8 @@ def build_account_maps(accounts):
 def match_company_to_current_account(linkedin_domain, linkedin_company,
                                      sfdc_account_domain, sfdc_account_name,
                                      linkedin_company_url=None,
-                                     sfdc_account_linkedin_urls=None):
+                                     sfdc_account_linkedin_urls=None,
+                                     skip_redirects=False):
     """Check if the LinkedIn company matches the contact's CURRENT SFDC account.
 
     Four exact-match signals (any one = match):
@@ -173,7 +174,7 @@ def match_company_to_current_account(linkedin_domain, linkedin_company,
                     return True
 
     # Signal 4: Redirect-resolved domain match (last — requires HTTP)
-    if li_domain and sfdc_domain and li_domain != sfdc_domain:
+    if not skip_redirects and li_domain and sfdc_domain and li_domain != sfdc_domain:
         resolved_li = resolve_domain_redirect(li_domain)
         if resolved_li == sfdc_domain:
             return True
@@ -185,7 +186,8 @@ def match_company_to_current_account(linkedin_domain, linkedin_company,
 
 
 def lookup_company_in_sfdc(linkedin_domain, linkedin_company, domain_map, name_map,
-                          linkedin_company_url=None, linkedin_slug_map=None):
+                          linkedin_company_url=None, linkedin_slug_map=None,
+                          skip_redirects=False):
     """Search ALL SFDC Accounts for the LinkedIn company.
 
     Five exact-match signals:
@@ -213,7 +215,7 @@ def lookup_company_in_sfdc(linkedin_domain, linkedin_company, domain_map, name_m
             return linkedin_slug_map[li_slug]
 
     # Signal 4: Resolve redirects and re-check domain map
-    if li_domain:
+    if not skip_redirects and li_domain:
         resolved = resolve_domain_redirect(li_domain)
         if resolved and resolved != li_domain and resolved not in REDIRECT_SINK_DOMAINS and resolved in domain_map:
             return domain_map[resolved]

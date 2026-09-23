@@ -276,7 +276,8 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
 
         try:
             scenario, updates, new_account, needs_url_review = process_enrichment(
-                enrichment, contact, domain_map, name_map, linkedin_slug_map
+                enrichment, contact, domain_map, name_map, linkedin_slug_map,
+                skip_redirects=preview,
             )
         except Exception as e:
             print(f"  ERROR processing {contact_id}: {e}", file=sys.stderr)
@@ -352,8 +353,10 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
     if preview:
         print(f"\n  *** PREVIEW MODE — no changes written to SFDC ***")
         print(f"  Run without --preview to apply these updates.")
-        remaining = count_remaining_sent(sf, quarter)
-        return len(processed_ids), remaining
+        return len(processed_ids), 0
+
+    # ── Reconnect SFDC (session may have expired during processing) ────
+    sf = connect_salesforce()
 
     # ── Clear Accurate__c for contacts being processed ─────────────────
     clear_updates = [{"Id": cid, "Accurate__c": False} for cid in contact_ids]
