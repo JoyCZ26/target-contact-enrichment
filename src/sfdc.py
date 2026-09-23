@@ -306,18 +306,50 @@ def mark_enrichments_processed(sf, enrichment_ids, status="Processed", dry_run=F
 
 # ── Bulk helpers ────────────────────────────────────────────────────────────
 
-def _bulk_update(sf, sobject, records):
-    """Update records — REST for small batches, Bulk API for large."""
+def _bulk_update(sf, sobject, records, _retries=0):
+    """Update records — REST for small batches, Bulk API for large.
+    Checks Bulk API responses for per-record failures and retries them
+    in smaller batches (down to single-record REST) to handle row-lock
+    contention from triggers like DLRS."""
     if len(records) <= 200:
         for rec in records:
             record_id = rec["Id"]
             body = {k: v for k, v in rec.items() if k != "Id"}
             sf.__getattr__(sobject).update(record_id, body)
-    else:
-        CHUNK = 10_000
-        for i in range(0, len(records), CHUNK):
-            chunk = records[i:i + CHUNK]
-            sf.bulk.__getattr__(sobject).update(chunk)
+        return
+
+    CHUNK = 10_000
+    all_failed = []
+    for i in range(0, len(records), CHUNK):
+        chunk = records[i:i + CHUNK]
+        results = sf.bulk.__getattr__(sobject).update(chunk)
+        failed = [
+            chunk[j] for j, r in enumerate(results)
+            if not r.get("success", True)
+        ]
+        if failed:
+            print(f"    Bulk {sobject} update: {len(failed)}/{len(chunk)} failed in chunk {i // CHUNK + 1}")
+            all_failed.extend(failed)
+
+    if not all_failed:
+        return
+
+    if _retries >= 3:
+        print(f"    WARNING: {len(all_failed)} {sobject} records still failing after retries — falling back to REST")
+        for rec in all_failed:
+            try:
+                record_id = rec["Id"]
+                body = {k: v for k, v in rec.items() if k != "Id"}
+                sf.__getattr__(sobject).update(record_id, body)
+            except Exception as e:
+                print(f"    FAILED {sobject} {rec['Id']}: {e}")
+        return
+
+    smaller_chunk = max(200, len(all_failed) // 4)
+    print(f"    Retrying {len(all_failed)} failed records in chunks of {smaller_chunk} (attempt {_retries + 1})...")
+    import time
+    time.sleep(2)
+    _bulk_update(sf, sobject, all_failed, _retries=_retries + 1)
 
 
 def _bulk_upsert(sf, sobject, external_id_field, records):
