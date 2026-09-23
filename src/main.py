@@ -14,8 +14,8 @@ from .sfdc import (
     create_enrichment_records,
     delete_enrichment_records,
     fetch_enrichment_ids_for_contacts,
-    fetch_unprocessed_enrichments,
-    count_remaining_unprocessed,
+    fetch_sent_enrichments,
+    count_remaining_sent,
     query_all,
     fetch_contacts_by_ids,
     fetch_all_accounts,
@@ -240,9 +240,9 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
     """
 
     # ── Fetch ready enrichments ────────────────────────────────────────
-    enrichments = fetch_unprocessed_enrichments(sf, quarter)
+    enrichments = fetch_sent_enrichments(sf, quarter)
     if not enrichments:
-        remaining = count_remaining_unprocessed(sf, quarter)
+        remaining = count_remaining_sent(sf, quarter)
         return 0, remaining
 
     # ── Fetch referenced contacts ──────────────────────────────────────
@@ -352,7 +352,7 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
     if preview:
         print(f"\n  *** PREVIEW MODE — no changes written to SFDC ***")
         print(f"  Run without --preview to apply these updates.")
-        remaining = count_remaining_unprocessed(sf, quarter)
+        remaining = count_remaining_sent(sf, quarter)
         return len(processed_ids), remaining
 
     # ── Clear Accurate__c for contacts being processed ─────────────────
@@ -391,7 +391,7 @@ def _process_batch(sf, quarter, dry_run=False, preview=False):
 
     print(f"  Batch done: {len(processed_ids)} processed, {len(error_ids)} errors, {len(url_review_ids)} URL review")
 
-    remaining = count_remaining_unprocessed(sf, quarter)
+    remaining = count_remaining_sent(sf, quarter)
     return len(processed_ids), remaining
 
 

@@ -209,24 +209,24 @@ CONTACT_PROCESS_FIELDS = """
 """.strip()
 
 
-def fetch_unprocessed_enrichments(sf, quarter):
-    """Fetch all unprocessed enrichment records for a specific quarter."""
-    print(f"Fetching unprocessed enrichments for {quarter}...")
+def fetch_sent_enrichments(sf, quarter):
+    """Fetch all Sent enrichment records for a specific quarter (ready for processing)."""
+    print(f"Fetching Sent enrichments for {quarter}...")
     records = query_all(
         sf,
         f"SELECT {ENRICHMENT_FIELDS} FROM Contact_Enrichment__c "
-        f"WHERE Processing_Status__c = 'Unprocessed' "
+        f"WHERE Processing_Status__c = 'Sent' "
         f"AND Enrichment_Quarter__c = '{quarter}'"
     )
-    print(f"  Found {len(records)} unprocessed enrichments")
+    print(f"  Found {len(records)} Sent enrichments")
     return [_strip_attributes(r) for r in records]
 
 
-def count_remaining_unprocessed(sf, quarter):
-    """Count enrichment records for a specific quarter still unprocessed."""
+def count_remaining_sent(sf, quarter):
+    """Count enrichment records for a specific quarter still awaiting processing."""
     result = sf.query(
         f"SELECT COUNT(Id) total FROM Contact_Enrichment__c "
-        f"WHERE Processing_Status__c = 'Unprocessed' "
+        f"WHERE Processing_Status__c = 'Sent' "
         f"AND Enrichment_Quarter__c = '{quarter}'"
     )
     return result["records"][0]["total"]
