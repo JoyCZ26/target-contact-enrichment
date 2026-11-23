@@ -3,7 +3,6 @@ Post-enrichment metrics report.
 
 Measures target contact accuracy across account segments:
   - All Owned Accounts (Excl. Customers)
-  - Target Accounts
   - ICPs
   - Tiered Accounts
   - Customer Accounts
@@ -22,7 +21,7 @@ from .sfdc import connect_salesforce, query_all
 
 METRICS_CONTACT_SOQL = """
 SELECT Id, Accurate__c, AccountId,
-       Account.Name, Account.Target_Account__c,
+       Account.Name,
        Account.Ideal_Customer_Profile__c,
        Account.ABX_Tier__c, Account_Stage__c
 FROM Contact
@@ -30,7 +29,7 @@ WHERE Quarterly_Enrich__c = true
 """.strip()
 
 METRICS_ACCOUNT_SOQL = """
-SELECT Id, Name, Target_Account__c,
+SELECT Id, Name,
        Ideal_Customer_Profile__c,
        ABX_Tier__c, Account_Stage__c, Account_Executive_Owner__c
 FROM Account
@@ -44,11 +43,6 @@ SEGMENTS = [
         "name": "All Owned Accounts\n(Excl. Customers)",
         "short": "all_owned",
         "account_filter": lambda a: (a.get("Account_Stage__c") or "") != "Customer" and a.get("Account_Executive_Owner__c"),
-    },
-    {
-        "name": "Target Accounts",
-        "short": "target",
-        "account_filter": lambda a: a.get("Target_Account__c") is True,
     },
     {
         "name": "ICPs",
@@ -92,7 +86,6 @@ def compute_metrics(sf):
         account_map[a["Id"]] = {
             "Id": a["Id"],
             "Name": a.get("Name") or "",
-            "Target_Account__c": a.get("Target_Account__c"),
             "Ideal_Customer_Profile__c": a.get("Ideal_Customer_Profile__c"),
             "ABX_Tier__c": a.get("ABX_Tier__c"),
             "Account_Stage__c": a.get("Account_Stage__c"),
